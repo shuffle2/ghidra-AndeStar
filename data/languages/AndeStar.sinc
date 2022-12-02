@@ -449,8 +449,8 @@ with : isa=0 {
     addr22bi: [u15_19], imm  is u15_19 & s0_14 [imm = s0_14 << 2;] { bi_addr = u15_19 + imm; export u15_19; }
     addr23  : [u15_19 + imm] is u15_19 & s0_14 [imm = s0_14 << 3;] { local addr:4 = u15_19 + imm; export addr; }
 
-    :DPREFI.^dprefi24, dpref20_23, addr22 is opc=0b010011 & dprefi24=0 & dpref20_23 & addr22 unimpl # w
-    :DPREFI.^dprefi24, dpref20_23, addr23 is opc=0b010011 & dprefi24=1 & dpref20_23 & addr23 unimpl # d
+    :DPREFI.^dprefi24, dpref20_23, addr22 is opc=0b010011 & dprefi24 & dprefi24=0 & dpref20_23 & addr22 unimpl # w
+    :DPREFI.^dprefi24, dpref20_23, addr23 is opc=0b010011 & dprefi24 & dprefi24=1 & dpref20_23 & addr23 unimpl # d
 
     :LBI      u20_24, addr20    is opc=0b000000 & u20_24 &          addr20   { u20_24 = zext(*:1 addr20); }
     :LBI.bi   u20_24, addr20bi  is opc=0b000100 & u20_24 & u15_19 & addr20bi { u20_24 = zext(*:1 addr20bi); u15_19 = bi_addr; }
