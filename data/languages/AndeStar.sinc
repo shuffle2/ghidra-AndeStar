@@ -1,0 +1,725 @@
+# instruction endianness is always big, but data load/store endian is controlled by PSW.BE
+# PSW.BE reset value is implementation defined, so it is useful to provide language specs defaulting each way
+define endian=$(ENDIAN);
+define alignment=2;
+
+define space ram        type=ram_space      size=4 default;
+define space register   type=register_space size=4;
+
+# GPRs
+define register offset=0 size=4 [
+    a0 a1 a2 a3 a4 a5
+    s0 s1 s2 s3 s4 s5 s6 s7 s8
+    ta
+    t0 t1 t2 t3 t4 t5 t6 t7 t8 t9
+    p0 p1
+    fp gp lp sp
+];
+
+# USRs
+define register offset=0x80 size=8 [d0 d1];
+define register offset=0x80 size=4 [d0.hi d0.lo d1.hi d1.lo];
+
+# TODO implement SRs. hacky impl for IRET for now
+# SR Encoding is 10bits. 3 Major, 4 Minor, 3 Extension
+define register offset=0x90 size=4 [ipc];
+
+# ghidra state
+define register offset=0x94 size=4 [bi_addr];
+
+# valid if isa=0
+define token instr32(32) endian=big
+    isa         = (31,31)
+    opc         = (25,30)
+    subop       = (0,4)
+    subop0_5    = (0,5)
+
+    dtlo21 = (21,21)
+    dt21 = (21,21)
+
+    sbgp19 = (19,19)
+    hwgp18_19=(18,19)
+    hwgp17_19=(17,19)
+
+    u6_9 = (6,9)
+    lmw_fp=(9,9)
+    lmw_gp=(8,8)
+    lmw_lp=(7,7)
+    lmw_sp=(6,6)
+    lmw5 = (5,5)
+    lmw4 = (4,4)
+    lmw3=(3,3)
+    lmw2=(2,2)
+    u0_1=(0,1)
+
+    setend20=(20,20)
+    setgie20=(20,20)
+
+    dprefi24=(24,24)
+    dpref20_23=(20,23)
+
+    standby5_6=(5,6)
+
+    u22_24=(22,24)
+    u21_24=(21,24)
+    u20_20=(20,20)
+    u6_14=(6,14)
+
+    u24_24  = (24,24)
+    u20_24  = (20,24)
+    u20_24i = (20,24)
+    u15_24  = (15,24)
+    u20_23  = (20,23)
+    u16_19  = (16,19)
+    u15_19  = (15,19)
+    u5_19   =  (5,19)
+    u5_14=(5,14)
+    u14_14  = (14,14)
+    u11_14  = (11,14)
+    u10_19  = (10,19)
+    u10_14  = (10,14)
+    u10_14i = (10,14)
+    u10_10  = (10,10)
+    u0_19   =  (0,19)
+    s0_19   =  (0,19) signed
+    u0_14   =  (0,14)
+    s0_23   =  (0,23) signed
+    s0_18   =  (0,18) signed
+    s0_17   =  (0,17) signed
+    s0_16   =  (0,16) signed
+    s0_15   =  (0,15) signed
+    s0_14   =  (0,14) signed
+    s0_13   =  (0,13) signed
+    u8_9    =   (8,9)
+    u7_9    =   (7,9)
+    u5_9    =   (5,9)
+    u6_7    =   (6,7)
+    u0_7    =   (0,7)
+    u0_5    =   (0,5)
+    u5_7    =   (5,7)
+    u5_5    =   (5,5)
+;
+
+# valid if isa_s=1
+define token instr16(16) endian=big
+    isa_s = (15,15)
+
+    op11_14 = (11,14)
+    op10_14 = (10,14)
+    op9_14 = (9,14)
+    op8_14 = (8,14)
+    op5_14 = (5,14)
+    subop0_2 = (0,2)
+
+    R5_5_9 = (5,9)
+    R5_0_4 = (0,4)
+
+    R4_5_8 = (5,8)
+
+    R3_8_10 = (8,10)
+    R3_6_8 = (6,8)
+    R3_3_5 = (3,5)
+    R3_0_2 = (0,2)
+
+    swid9 = (0,8)
+    imm10s = (0,9) signed
+    imm8s = (0,7) signed
+    imm7u = (0,6)
+    imm5u = (0,4)
+    imm5s = (0,4) signed
+    imm3u = (0,2)
+
+    lwi37 = (7,7)
+;
+
+# GPRs - 32/16bit instructions, 5bit index
+attach variables [u20_24 u15_19 u10_14 R5_0_4 R5_5_9] [
+    a0 a1 a2 a3 a4 a5
+    s0 s1 s2 s3 s4 s5 s6 s7 s8
+    ta
+    t0 t1 t2 t3 t4 t5 t6 t7 t8 t9
+    p0 p1
+    fp gp lp sp
+];
+# GPRs - 16bit instruction, 4bit index
+attach variables [R4_5_8] [
+    a0 a1 a2 a3 a4 a5
+    s0 s1 s2 s3 s4 s5
+    t0 t1 t2 t3
+];
+# GPRs - 16bit instruction, 3bit index
+attach variables [R3_0_2 R3_3_5 R3_6_8 R3_8_10] [
+    a0 a1 a2 a3 a4 a5
+    s0 s1
+];
+
+# USRs
+attach variables [dtlo21] [d0.lo d1.lo];
+attach variables [dt21] [d0 d1];
+
+attach names [setend20] [L B];
+attach names [setgie20] [D E];
+attach names [dprefi24] [w d];
+attach names [dpref20_23] [
+    SRD MRD SWR MWR PTE CLWR
+    ImpDep6 ImpDep7 ImpDep8 ImpDep9 ImpDep10
+    ImpDep11 ImpDep12 ImpDep13 ImpDep14 ImpDep15
+];
+attach names [standby5_6] [no_wake_grant wake_grant wait_done reserved];
+attach names [lmw2] ["" m];
+attach names [lmw3] [i d];
+attach names [lmw4] [b a];
+
+define pcodeop Exception_Breakpoint;
+define pcodeop Exception_System_Call;
+define pcodeop Exception_Trap;
+define pcodeop cctl;
+define pcodeop dsb;
+define pcodeop isb;
+define pcodeop isync;
+define pcodeop mfsr;
+define pcodeop mtsr;
+define pcodeop setend;
+define pcodeop setgie;
+define pcodeop standby;
+define pcodeop lmw;
+define pcodeop smw;
+
+macro goto_next_if_not(cond) {
+    if (!cond) goto inst_next;
+}
+
+with : isa=0 {
+    # ALU_1
+    with : opc=0b100000 & u5_9=0 {
+        :ADD   u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00000 { u20_24 =   u15_19 + u10_14; }
+        :AND   u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00010 { u20_24 =   u15_19 & u10_14; }
+        :OR    u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00100 { u20_24 =   u15_19 | u10_14; }
+        :XOR   u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00011 { u20_24 =   u15_19 ^ u10_14; }
+        :NOR   u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00101 { u20_24 = ~(u15_19 | u10_14); }
+        :ROTR  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b01111 {
+            local ra = u10_14[0,5];
+            u20_24 = (u15_19 >> ra) | (u15_19 << (32 - ra));
+        }
+        :ROTRI u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i & subop=0b01011 {
+            local ra = u10_14i;
+            u20_24 = (u15_19 >> ra) | (u15_19 << (32 - ra));
+        }
+        :CMOVN u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11011 {
+            goto_next_if_not(u10_14 != 0);
+            u20_24 = u15_19;
+        }
+        :CMOVZ u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11010 {
+            goto_next_if_not(u10_14 == 0);
+            u20_24 = u15_19;
+        }
+        :SEB u20_24, u15_19 is u20_24 & u15_19 & u5_14=0 & subop=0b10000 { u20_24 = sext(u15_19:1); }
+        :SEH u20_24, u15_19 is u20_24 & u15_19 & u5_14=0 & subop=0b10001 { u20_24 = sext(u15_19:2); }
+        :ZEH u20_24, u15_19 is u20_24 & u15_19 & u5_14=0 & subop=0b10011 { u20_24 = zext(u15_19:2); }
+
+        :SLL  u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14  & subop=0b01100 { u20_24 = u15_19 << u10_14[0,5]; }
+        :SLLI u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i & subop=0b01000 {
+            local sa:4 = u10_14i;
+            u20_24 = u15_19 << sa[0,5];
+        }
+        :SRA  u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14  & subop=0b01110 { u20_24 = u15_19 s>> u10_14[0,5]; }
+        :SRAI u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i & subop=0b01010 {
+            local sa:4 = u10_14i;
+            u20_24 = u15_19 s>> sa[0,5];
+        }
+        :SRL  u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14  & subop=0b01101 { u20_24 = u15_19 >> u10_14[0,5]; }
+        :SRLI u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i & subop=0b01001 {
+            local sa:4 = u10_14i;
+            u20_24 = u15_19 >> sa[0,5];
+        }
+        :NOP is u20_24=0 & u15_19=0 & u10_14=0 & subop=0b01001 {}
+
+        :SLT  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00110 { u20_24 = zext(u15_19  < u10_14); }
+        :SLTS u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00111 { u20_24 = zext(u15_19 s< u10_14); }
+
+        :SUB  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00001 { u20_24 = u15_19 - u10_14; }
+        :SVA  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11000 unimpl
+        :SVS  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11001 unimpl
+        :WSBH u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b10100 unimpl
+    }
+    # ALU_2
+    with : opc=0b100001 {
+        :BTST u20_24, u15_19, u0_5 is u20_24 & u15_19 & u0_5 & subop0_5=0b001011 {
+            u20_24 = zext((u15_19 & (1 << u0_5)) != 0);
+        }
+        :MUL u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b100100 { u20_24 = u15_19 * u10_14; }
+        :MADD32 dtlo21, u15_19, u10_14  is u22_24=0 & dtlo21 & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b110011 {
+            local a = u15_19;
+            local b = u10_14;
+            local m = a * b;
+            dtlo21 = dtlo21 + m:4;
+        }
+        :MADD64 dt21, u15_19, u10_14    is u22_24=0 & dt21   & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b101011 {
+            local a:8 = zext(u15_19);
+            local b:8 = zext(u10_14);
+            local m:8 = a * b;
+            dt21 = dt21 + m;
+        }
+        :MADDS64 dt21, u15_19, u10_14   is u22_24=0 & dt21   & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b101010 {
+            local a:8 = sext(u15_19);
+            local b:8 = sext(u10_14);
+            local m:8 = a * b;
+            dt21 = dt21 + m;
+        }
+        :MFUSR u20_24, (u15_19, u10_14) is u20_24 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b100000 unimpl
+        :MTUSR u20_24, (u15_19, u10_14) is u20_24 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b100001 unimpl
+    }
+    # compute relative targets for branches
+    imm14s_rel: rel is s0_13 [ rel = inst_start + (s0_13 << 1); ] { export *:4 rel; }
+    imm16s_rel: rel is s0_15 [ rel = inst_start + (s0_15 << 1); ] { export *:4 rel; }
+    imm24s_rel: rel is s0_23 [ rel = inst_start + (s0_23 << 1); ] { export *:4 rel; }
+    # BR1
+    with : opc=0b100110 {
+        :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel { if (u20_24 == u15_19) goto imm14s_rel; }
+        :BNE u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=1 & imm14s_rel { if (u20_24 != u15_19) goto imm14s_rel; }
+    }
+    # BR2
+    with : opc=0b100111 {
+        :BEQZ u20_24, imm16s_rel is u20_24 & u16_19=0b0010 & imm16s_rel { if (u20_24 == 0) 	goto imm16s_rel; }
+        :BNEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0011 & imm16s_rel { if (u20_24 != 0) 	goto imm16s_rel; }
+        :BGEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0100 & imm16s_rel { if (u20_24 s>= 0) goto imm16s_rel; }
+        :BLTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0101 & imm16s_rel { if (u20_24 s< 0) 	goto imm16s_rel; }
+        :BGTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0110 & imm16s_rel { if (u20_24 s> 0) 	goto imm16s_rel; }
+        :BLEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0111 & imm16s_rel { if (u20_24 s<= 0) goto imm16s_rel; }
+        :BGEZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1100 & imm16s_rel {
+            local bcond = u20_24;
+            lp = inst_next;
+            goto_next_if_not(bcond s>= 0);
+            call imm16s_rel;
+        }
+        :BLTZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1101 & imm16s_rel {
+            local bcond = u20_24;
+            lp = inst_next;
+            goto_next_if_not(bcond s< 0);
+            call imm16s_rel;
+        }
+    }
+    # JI
+    with : opc=0b100100 {
+        :J   imm24s_rel is u24_24=0 & imm24s_rel { goto imm24s_rel; }
+        :JAL imm24s_rel is u24_24=1 & imm24s_rel {
+            lp = inst_next;
+            call imm24s_rel;
+        }
+    }
+    # JREG
+    with : opc=0b100101 {
+        :JR  u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=0 & subop=0b00000 {
+            goto [u10_14];
+        }
+        :RET u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=1 & subop=0b00000 {
+            return [u10_14];
+        }
+        :JR."[T|IT]OFF" u10_14 is u15_24=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
+            #PSW.IT = 0;
+            #if (u8_9 == 0b11) PSW.DT = 0;
+            goto [u10_14];
+        }
+        :JRAL u20_24, u10_14 is u20_24    & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 {
+            local jaddr:4 = u10_14;
+            u20_24 = inst_next;
+            goto [jaddr];
+        }
+        # special case for call
+        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 {
+            local jaddr:4 = u10_14;
+            lp = inst_next;
+            call [jaddr];
+        }
+        # special case for return (from leaf function)
+        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u10_14i=30 & u8_9=0 & u5_7=0 & subop=0b00001 {
+            local jaddr:4 = u10_14;
+            lp = inst_next;
+            return [jaddr];
+        }
+        :JRAL."[T|IT]ON" u20_24, u10_14 is u20_24     & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
+            local jaddr:4 = u10_14;
+            u20_24 = inst_next;
+            #PSW.IT = 1;
+            #if (u8_9 == 0b11) PSW.DT = 1;
+            goto [jaddr];
+        }
+        # special case for call
+        :JRAL."[T|IT]ON" u10_14         is u20_24i=30 & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
+            local jaddr:4 = u10_14;
+            lp = inst_next;
+            #PSW.IT = 1;
+            #if (u8_9 == 0b11) PSW.DT = 1;
+            call [jaddr];
+        }
+    }
+    # MISC
+    with : opc=0b110010 {
+        # Generate_Exception
+        :BREAK   u5_19 is u20_24=0 & u5_19 & subop=0b01010 { Exception_Breakpoint(u5_19:2); }
+        :SYSCALL u5_19 is u20_24=0 & u5_19 & subop=0b01011 { Exception_System_Call(u5_19:2); }
+        :TRAP    u5_19 is u20_24=0 & u5_19 & subop=0b00101 { Exception_Trap(u5_19:2); }
+        :TEQZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00110 { goto_next_if_not(u20_24 == 0); Exception_Trap(u5_19:2); }
+        :TNEZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00111 { goto_next_if_not(u20_24 != 0); Exception_Trap(u5_19:2); }
+
+        :CCTL u20_24, u15_19, u5_9, u10_10 is u20_24 & u15_19 & u11_14=0 & u10_10 & u5_9 & subop=0b00001 {
+            cctl(u20_24:1, u15_19:1, u5_9:1, u10_10:1);
+        }
+        :DSB is u20_24=0 & u5_19=0 & subop=0b01000 { dsb(); }
+        :ISB is u20_24=0 & u5_19=0 & subop=0b01001 { isb(); }
+        :ISYNC u20_24 is u20_24 & u5_19=0 & subop=0b01101 { isync(u20_24:1); }
+        :IRET is u20_24=0 & u5_19=0 & subop=0b00100 { return [ipc]; }
+        :MFSR u20_24, u10_19 is u20_24 & u10_19 & u5_9=0 & subop=0b00010 { u20_24 = mfsr(u10_19:3); }
+        :MTSR u20_24, u10_19 is u20_24 & u10_19 & u5_9=0 & subop=0b00011 { mtsr(u20_24:1, u10_19:3); }
+        :SETEND.^setend20 is u21_24=0 & setend20 & u10_19=0b0010000000 & u5_9=0b00001 & subop=0b00011 { setend(setend20:1); }
+        :SETGIE.^setgie20 is u21_24=0 & setgie20 & u10_19=0b0010000000 & u5_9=0b00010 & subop=0b00011 { setgie(setgie20:1); }
+        :STANDBY is u20_24=0 & u10_19=0 & u7_9=0 & standby5_6 & subop=0b00000 { standby(standby5_6:1); }
+    }
+    # MEM
+    with : opc=0b011100 {
+        addr1  : [u15_19 + (u10_14 "<<" u8_9)] is u15_19 & u10_14 & u8_9 { local addr:4 = u15_19 + (u10_14 << u8_9); export addr; }
+        addr1bi: [u15_19], (u10_14 "<<" u8_9)  is u15_19 & u10_14 & u8_9 { bi_addr = u15_19 + (u10_14 << u8_9); export u15_19; }
+
+        :DPREF dpref20_23, addr1 is u24_24=0 & dpref20_23 & addr1 & u0_7=0b00010011 unimpl
+
+        :LB     u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00000000 { u20_24 = zext(*:1 addr1); }
+        :LB.bi  u20_24, addr1bi  is u20_24 & u15_19 & addr1bi & u0_7=0b00000100 { u20_24 = zext(*:1 addr1bi); u15_19 = bi_addr; }
+        :LBS    u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00010000 { u20_24 = sext(*:1 addr1); }
+        :LBS.bi u20_24, addr1bi  is u20_24 & u15_19 & addr1bi & u0_7=0b00010100 { u20_24 = sext(*:1 addr1bi); u15_19 = bi_addr; }
+        :LH     u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00000001 { u20_24 = zext(*:2 addr1); }
+        :LH.bi  u20_24, addr1bi  is u20_24 & u15_19 & addr1bi & u0_7=0b00000101 { u20_24 = zext(*:2 addr1bi); u15_19 = bi_addr; }
+        :LHS    u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00010001 { u20_24 = sext(*:2 addr1); }
+        :LHS.bi u20_24, addr1bi  is u20_24 & u15_19 & addr1bi & u0_7=0b00010101 { u20_24 = sext(*:2 addr1bi); u15_19 = bi_addr; }
+        :LW     u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00000010 { u20_24 = *:4 addr1; }
+        :LW.bi  u20_24, addr1bi  is u20_24 & u15_19 & addr1bi & u0_7=0b00000110 { u20_24 = *:4 addr1bi; u15_19 = bi_addr; }
+        :LLW    u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00011000 unimpl
+        :LWUP   u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00100010 unimpl
+
+        :SB     u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00001000 { *:1 addr1   = u20_24:1; }
+        :SB.bi  u20_24, addr1bi  is u20_24 & u15_19 & addr1bi & u0_7=0b00001100 { *:1 addr1bi = u20_24:1; u15_19 = bi_addr; }
+        :SH     u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00001001 { *:2 addr1   = u20_24:2; }
+        :SH.bi  u20_24, addr1bi  is u20_24 & u15_19 & addr1bi & u0_7=0b00001101 { *:2 addr1bi = u20_24:2; u15_19 = bi_addr; }
+        :SW     u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00001010 { *:4 addr1   = u20_24:4; }
+        :SW.bi  u20_24, addr1bi  is u20_24 & u15_19 & addr1bi & u0_7=0b00001110 { *:4 addr1bi = u20_24:4; u15_19 = bi_addr; }
+        :SCW    u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00011001 unimpl
+        :SWUP   u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00101010 unimpl
+    }
+    # LSMW
+    with : opc=0b011101 {
+        # the register range is INCLUSIVE: [Rb,Re].
+        # assumed that Rb <= Re
+        # assumed that Rb and Re are in range [0,28)
+        # Rb=Re=31 seems to mean zero-sized range
+        # if zero-sized range, enable4 should be nonzero
+        # i lost patience trying to do this in sleigh so it's implemented via CALLOTHER pcode injection
+        # TODO maybe use autogen idea like https://github.com/xyzz/ghidra-rl78/blob/master/data/languages/rl78.slaspec.in#L149 instead of pcode injection...
+        mw_wb_disp: squash reg_size disp is u10_14i & u20_24i & lmw_fp & lmw_gp & lmw_lp & lmw_sp & lmw3 [
+            # squash = (u20_24i == 31) ? 0 : 1
+            squash = 1 ^ (((u20_24i >> 4) & 1) & ((u20_24i >> 3) & 1) & ((u20_24i >> 2) & 1) & ((u20_24i >> 1) & 1) & (u20_24i & 1));
+            reg_size = ((squash * (u10_14i - u20_24i + 1)) + lmw_fp + lmw_gp + lmw_lp + lmw_sp) * 4;
+            # mul by {inc:1,dec:-1}
+            disp = reg_size * (((lmw3^1) << 1) - 1);
+        ] {
+            export *[const]:4 disp;
+        }
+        :LMW.^lmw4^lmw3^lmw2 u20_24, [u15_19], u10_14, u6_9 is u20_24 & u20_24i & u15_19 & u10_14 & u10_14i & u6_9 & lmw5=0 & lmw4 & lmw3 & lmw2 & lmw2=0 & u0_1=0b00 {
+            lmw(u20_24i:1, u15_19, u10_14i:1, u6_9:1, lmw4:1, lmw3:1, lmw2:1);
+        }
+        :LMW.^lmw4^lmw3^lmw2 u20_24, [u15_19], u10_14, u6_9 is u20_24 & u20_24i & u15_19 & u10_14 & u10_14i & u6_9 & lmw5=0 & lmw4 & lmw3 & lmw2 & lmw2=1 & u0_1=0b00 & mw_wb_disp {
+            lmw(u20_24i:1, u15_19, u10_14i:1, u6_9:1, lmw4:1, lmw3:1, lmw2:1);
+            build mw_wb_disp;
+            u15_19 = u15_19 + mw_wb_disp;
+        }
+        :SMW.^lmw4^lmw3^lmw2 u20_24, [u15_19], u10_14, u6_9 is u20_24 & u20_24i & u15_19 & u10_14 & u10_14i & u6_9 & lmw5=1 & lmw4 & lmw3 & lmw2 & lmw2=0 & u0_1=0b00 {
+            smw(u20_24i:1, u15_19, u10_14i:1, u6_9:1, lmw4:1, lmw3:1, lmw2:1);
+        }
+        :SMW.^lmw4^lmw3^lmw2 u20_24, [u15_19], u10_14, u6_9 is u20_24 & u20_24i & u15_19 & u10_14 & u10_14i & u6_9 & lmw5=1 & lmw4 & lmw3 & lmw2 & lmw2=1 & u0_1=0b00 & mw_wb_disp {
+            smw(u20_24i:1, u15_19, u10_14i:1, u6_9:1, lmw4:1, lmw3:1, lmw2:1);
+            build mw_wb_disp;
+            u15_19 = u15_19 + mw_wb_disp;
+        }
+    }
+
+    addr20  : [u15_19 + s0_14] is u15_19 & s0_14 { local addr:4 = u15_19 + s0_14; export addr; }
+    addr20bi: [u15_19], s0_14  is u15_19 & s0_14 { bi_addr = u15_19 + s0_14; export u15_19; }
+    # go against documentation and resolve effective immediate
+    addr21  : [u15_19 + imm] is u15_19 & s0_14 [imm = s0_14 << 1;] { local addr:4 = u15_19 + imm; export addr; }
+    addr21bi: [u15_19], imm  is u15_19 & s0_14 [imm = s0_14 << 1;] { bi_addr = u15_19 + imm; export u15_19; }
+    addr22  : [u15_19 + imm] is u15_19 & s0_14 [imm = s0_14 << 2;] { local addr:4 = u15_19 + imm; export addr; }
+    addr22bi: [u15_19], imm  is u15_19 & s0_14 [imm = s0_14 << 2;] { bi_addr = u15_19 + imm; export u15_19; }
+    addr23  : [u15_19 + imm] is u15_19 & s0_14 [imm = s0_14 << 3;] { local addr:4 = u15_19 + imm; export addr; }
+
+    :DPREFI.^dprefi24, dpref20_23, addr22 is opc=0b010011 & dprefi24=0 & dpref20_23 & addr22 unimpl # w
+    :DPREFI.^dprefi24, dpref20_23, addr23 is opc=0b010011 & dprefi24=1 & dpref20_23 & addr23 unimpl # d
+
+    :LBI      u20_24, addr20    is opc=0b000000 & u20_24 &          addr20   { u20_24 = zext(*:1 addr20); }
+    :LBI.bi   u20_24, addr20bi  is opc=0b000100 & u20_24 & u15_19 & addr20bi { u20_24 = zext(*:1 addr20bi); u15_19 = bi_addr; }
+    :LBSI     u20_24, addr20    is opc=0b010000 & u20_24 &          addr20   { u20_24 = sext(*:1 addr20); }
+    :LBSI.bi  u20_24, addr20bi  is opc=0b010100 & u20_24 & u15_19 & addr20bi { u20_24 = sext(*:1 addr20bi); u15_19 = bi_addr; }
+    :LHI      u20_24, addr21    is opc=0b000001 & u20_24 &          addr21   { u20_24 = zext(*:2 addr21); }
+    :LHI.bi   u20_24, addr21bi  is opc=0b000101 & u20_24 & u15_19 & addr21bi { u20_24 = zext(*:2 addr21bi); u15_19 = bi_addr; }
+    :LHSI     u20_24, addr21    is opc=0b010001 & u20_24 &          addr21   { u20_24 = sext(*:2 addr21); }
+    :LHSI.bi  u20_24, addr21bi  is opc=0b010101 & u20_24 & u15_19 & addr21bi { u20_24 = sext(*:2 addr21bi); u15_19 = bi_addr; }
+    :LWI      u20_24, addr22    is opc=0b000010 & u20_24 &          addr22   { u20_24 = zext(*:4 addr22); }
+    :LWI.bi   u20_24, addr22bi  is opc=0b000110 & u20_24 & u15_19 & addr22bi { u20_24 = zext(*:4 addr22bi); u15_19 = bi_addr; }
+
+    :SBI      u20_24, addr20    is opc=0b001000 & u20_24 &          addr20   { *:1 addr20   = u20_24:1; }
+    :SBI.bi   u20_24, addr20bi  is opc=0b001100 & u20_24 & u15_19 & addr20bi { *:1 addr20bi = u20_24:1; u15_19 = bi_addr; }
+    :SHI      u20_24, addr21    is opc=0b001001 & u20_24 &          addr21   { *:2 addr21   = u20_24:2; }
+    :SHI.bi   u20_24, addr21bi  is opc=0b001101 & u20_24 & u15_19 & addr21bi { *:2 addr21bi = u20_24:2; u15_19 = bi_addr; }
+    :SWI      u20_24, addr22    is opc=0b001010 & u20_24 &          addr22   { *:4 addr22   = u20_24:4; }
+    :SWI.bi   u20_24, addr22bi  is opc=0b001110 & u20_24 & u15_19 & addr22bi { *:4 addr22bi = u20_24:4; u15_19 = bi_addr; }
+
+    :ADDI  u20_24, u15_19, s0_14 is opc=0b101000 & u20_24 & u15_19 & s0_14 { u20_24 = u15_19 + s0_14; }
+    :ANDI  u20_24, u15_19, u0_14 is opc=0b101010 & u20_24 & u15_19 & u0_14 { u20_24 = u15_19 & u0_14; }
+    :ORI   u20_24, u15_19, u0_14 is opc=0b101100 & u20_24 & u15_19 & u0_14 { u20_24 = u15_19 | u0_14; }
+    :XORI  u20_24, u15_19, u0_14 is opc=0b101011 & u20_24 & u15_19 & u0_14 { u20_24 = u15_19 ^ u0_14; }
+    :SUBRI u20_24, u15_19, s0_14 is opc=0b101001 & u20_24 & u15_19 & s0_14 { u20_24 = s0_14 - u15_19; }
+    :SLTI  u20_24, u15_19, s0_14 is opc=0b101110 & u20_24 & u15_19 & s0_14 { u20_24 = zext(u15_19  < s0_14); }
+    :SLTSI u20_24, u15_19, s0_14 is opc=0b101111 & u20_24 & u15_19 & s0_14 { u20_24 = zext(u15_19 s< s0_14); }
+
+    :MOVI  u20_24, s0_19 is opc=0b100010 & u20_24 & s0_19 { u20_24 = s0_19; }
+    :SETHI u20_24, u0_19 is opc=0b100011 & u20_24 & u0_19 { u20_24 = u0_19 << 12; }
+
+############# V1 perf extensions
+
+    # ALU_2
+    with : opc=0b100001 {
+        :ABS   u20_24, u15_19          is u20_24 & u15_19 & u10_14=0 & u6_9=0 & subop0_5=0b000011 {
+            local ra = u15_19;
+            if (ra s>= 0) goto <set_val>;
+            if (ra == 0x80000000) goto <set_max>;
+            u20_24 = -ra;
+            goto inst_next;
+            <set_val>
+            u20_24 = ra;
+            goto inst_next;
+            <set_max>
+            u20_24 = 0x7fffffff;
+        }
+        :AVE   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000010 unimpl
+        :BCLR  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001001 { u20_24 = u15_19 & ~(1 << u10_14i); }
+        :BSET  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001000 { u20_24 = u15_19 |  (1 << u10_14i); }
+        :BTGL  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001010 { u20_24 = u15_19 ^  (1 << u10_14i); }
+        :BTST  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001011 { u20_24 = zext((u15_19 &  (1 << u10_14i)) != 0); }
+        :CLIP  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b000101 {
+            local max:4 = (1 << u10_14i) - 1;
+            local min:4 = 0;
+            local ra = u15_19;
+            if (ra s> max) goto <set_max>;
+            if (ra s< min) goto <set_zero>;
+            u20_24 = ra;
+            goto inst_next;
+            <set_max>
+            u20_24 = max;
+            goto inst_next;
+            <set_zero>
+            u20_24 = 0;
+        }
+        :CLIPS u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b000100 {
+            local max:4 = (1 << u10_14i) - 1;
+            local min:4 = -(1 << u10_14i);
+            local ra = u15_19;
+            if (ra s> max) goto <set_max>;
+            if (ra s< min) goto <set_zero>;
+            u20_24 = ra;
+            goto inst_next;
+            <set_max>
+            u20_24 = max;
+            goto inst_next;
+            <set_zero>
+            u20_24 = 0;
+        }
+        :CLO   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000110 unimpl
+        :CLZ   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000111 unimpl
+        :MAX   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000000 {
+            if (u15_19 s>= u10_14) goto <set_ra>;
+            u20_24 = u10_14;
+            goto inst_next;
+            <set_ra>
+            u20_24 = u15_19;
+        }
+        :MIN   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000001 {
+            if (u15_19 s>= u10_14) goto <set_rb>;
+            u20_24 = u15_19;
+            goto inst_next;
+            <set_rb>
+            u20_24 = u10_14;
+        }
+    }
+
+############# V2 Baseline
+
+    gprel17: [+rel] is s0_16 [rel = s0_16 << 2;] { local addr:4 = gp + rel; export addr; }
+    gprel18: [+rel] is s0_17 [rel = s0_17 << 1;] { local addr:4 = gp + rel; export addr; }
+    gprel19: [+s0_18] is s0_18 { local addr:4 = gp + s0_18; export addr; }
+
+    # ALU_1
+    with : opc=0b100000 {
+        # TODO check div by zero and/or IDIVZE state
+        :DIVR  u20_24, u15_19, u10_14, u5_9 is u20_24 & u15_19 & u10_14 & u5_9 & subop=0b10111 {
+            local taddr:4 = &u20_24;
+            local saddr:4 = &u15_19;
+            local a:4 = u10_14;
+            local b:4 = u5_9;
+            u20_24 = a / b;
+            if (taddr == saddr) goto inst_next;
+            u15_19 = a % b;
+        }
+        :DIVSR u20_24, u15_19, u10_14, u5_9 is u20_24 & u15_19 & u10_14 & u5_9 & subop=0b10110 {
+            local taddr:4 = &u20_24;
+            local saddr:4 = &u15_19;
+            local a:4 = u10_14;
+            local b:4 = u5_9;
+            u20_24 = a s/ b;
+            if (taddr == saddr) goto inst_next;
+            u15_19 = a s% b;
+        }
+    }
+    # ALU_2
+    with : opc=0b100001 {
+        :MADDR32 u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & u6_9=0b0001 & subop0_5=0b110011 {
+            local a:4 = u15_19;
+            local b:4 = u10_14;
+            local m:4 = a * b;
+            u20_24 = u20_24 + m;
+        }
+        :MSUBR32 u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & u6_9=0b0001 & subop0_5=0b110101 {
+            local a:4 = u15_19;
+            local b:4 = u10_14;
+            local m:4 = a * b;
+            u20_24 = u20_24 - m;
+        }
+        :MULR64  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & u6_9=0b0001 & subop0_5=0b101001 {
+            local a:8 = zext(u15_19);
+            local b:8 = zext(u10_14);
+            local m:8 = a * b;
+            local l:4 = m:4;
+            local h:4 = m(4);
+            # TODO Assumes PSW.BE==0
+            local rt0:4 = &u20_24 & ~3;
+            local rt1:4 = rt0 + 4;
+            *[register]:4 rt0 = l;
+            *[register]:4 rt1 = h;
+        }
+        :MULSR64 u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & u6_9=0b0001 & subop0_5=0b101000 {
+            local a:8 = sext(u15_19);
+            local b:8 = sext(u10_14);
+            local m:8 = a * b;
+            local l:4 = m:4;
+            local h:4 = m(4);
+            # TODO Assumes PSW.BE==0
+            local rt0:4 = &u20_24 & ~3;
+            local rt1:4 = rt0 + 4;
+            *[register]:4 rt0 = l;
+            *[register]:4 rt1 = h;
+        }
+    }
+    # LBGP
+    with : opc=0b010111 {
+        :LBI.gp  u20_24, gprel19 is u20_24 & sbgp19=0 & gprel19 { u20_24 = zext(*:1 gprel19); }
+        :LBSI.gp u20_24, gprel19 is u20_24 & sbgp19=1 & gprel19 { u20_24 = sext(*:1 gprel19); }
+    }
+    # SBGP
+    with : opc=0b011111 {
+        :SBI.gp u20_24, gprel19 is u20_24 & sbgp19=0 & gprel19 { *:1 gprel19 = u20_24:1; }
+        :ADDI.gp u20_24, s0_18 is u20_24 & sbgp19=1 & s0_18 { u20_24 = gp + s0_18; }
+    }
+    # HWGP
+    with : opc=0b011110 {
+        :LHI.gp  u20_24, gprel18 is u20_24 & hwgp18_19=0b00  & gprel18 { u20_24 = zext(*:2 gprel18); }
+        :LHSI.gp u20_24, gprel18 is u20_24 & hwgp18_19=0b01  & gprel18 { u20_24 = sext(*:2 gprel18); }
+        :LWI.gp  u20_24, gprel17 is u20_24 & hwgp17_19=0b110 & gprel17 { u20_24 = *:4 gprel17; }
+
+        :SHI.gp  u20_24, gprel18 is u20_24 & hwgp18_19=0b10  & gprel18 { *:2 gprel18 = u20_24:2; }
+        :SWI.gp  u20_24, gprel17 is u20_24 & hwgp17_19=0b111 & gprel17 { *:4 gprel17 = u20_24:4; }
+    }
+}
+
+with : isa_s=1 {
+    # BFMI333
+    with : op9_14=0b001011 {
+        :XEB33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b000 { R3_6_8 = zext(R3_3_5:1); }
+        :XEH33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b001 { R3_6_8 = zext(R3_3_5:2); }
+        :SEB33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b010 { R3_6_8 = sext(R3_3_5:1); }
+        :SEH33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b011 { R3_6_8 = sext(R3_3_5:2); }
+        :XLSB33 R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b100 { R3_6_8 = R3_3_5 & 1; }
+        :X11B33 R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b101 { R3_6_8 = R3_3_5 & 0x7ff; }
+    }
+    # XWI37
+    with : op11_14=0b0111 {
+        fprel: [fp + rel] is fp & imm7u [rel = imm7u << 2;] { local addr:4 = fp + rel; export addr; }
+        :LWI37 R3_8_10, fprel is R3_8_10 & lwi37=0 & fprel { R3_8_10 = *:4 fprel; }
+        :SWI37 R3_8_10, fprel is R3_8_10 & lwi37=1 & fprel { *:4 fprel = R3_8_10; }
+    }
+
+    addr30  : [R3_3_5, imm3u] is R3_3_5 & imm3u { local addr:4 = R3_3_5 + imm3u; export addr; }
+    addr31  : [R3_3_5, imm]   is R3_3_5 & imm3u [imm = imm3u << 1;] { local addr:4 = R3_3_5 + imm; export addr; }
+    addr32  : [R3_3_5, imm]   is R3_3_5 & imm3u [imm = imm3u << 2;] { local addr:4 = R3_3_5 + imm; export addr; }
+    addr32bi: [R3_3_5, imm]   is R3_3_5 & imm3u [imm = imm3u << 2;] { bi_addr = R3_3_5 + imm; export R3_3_5; }
+
+    :LBI333    R3_6_8, addr30   is op9_14=0b010011 & R3_6_8 &          addr30   { R3_6_8 = zext(*:1 addr30); }
+    :LHI333    R3_6_8, addr31   is op9_14=0b010010 & R3_6_8 &          addr31   { R3_6_8 = zext(*:2 addr31); }
+    :LWI333    R3_6_8, addr32   is op9_14=0b010000 & R3_6_8 &          addr32   { R3_6_8 = *:4 addr32; }
+    :LWI333.bi R3_6_8, addr32bi is op9_14=0b010001 & R3_6_8 & R3_3_5 & addr32bi { R3_6_8 = *:4 addr32bi; R3_3_5 = bi_addr; }
+
+    :SBI333    R3_6_8, addr30   is op9_14=0b010111 & R3_6_8 &          addr30   { *:1 addr30   = R3_6_8:1; }
+    :SHI333    R3_6_8, addr31   is op9_14=0b010110 & R3_6_8 &          addr31   { *:2 addr31   = R3_6_8:2; }
+    :SWI333    R3_6_8, addr32   is op9_14=0b010100 & R3_6_8 &          addr32   { *:4 addr32   = R3_6_8:4; }
+    :SWI333.bi R3_6_8, addr32bi is op9_14=0b010101 & R3_6_8 & R3_3_5 & addr32bi { *:4 addr32bi = R3_6_8:4; }
+
+    addr4: [R5_0_4] is R5_0_4 { export R5_0_4; }
+    :LWI450 R4_5_8, addr4 is op9_14=0b011010 & R4_5_8 & addr4 { R4_5_8 = *:4 addr4; }
+    :SWI450 R4_5_8, addr4 is op9_14=0b011011 & R4_5_8 & addr4 { *:4 addr4 = R4_5_8:4; }
+
+    imm8s_rel: rel is imm8s [ rel = inst_start + (imm8s << 1); ] { export *:4 rel; }
+    :BEQZ38 R3_8_10, imm8s_rel is op11_14=0b1000 & R3_8_10 & imm8s_rel { if (R3_8_10 == 0)  goto imm8s_rel; }
+    :BNEZ38 R3_8_10, imm8s_rel is op11_14=0b1001 & R3_8_10 & imm8s_rel { if (R3_8_10 != 0)  goto imm8s_rel; }
+    # documented as if R3_8_10 cannot be R5(a5), but that is currently ignored
+    :BEQS38 R3_8_10, imm8s_rel is op11_14=0b1010 & R3_8_10 & imm8s_rel { if (R3_8_10 == a5) goto imm8s_rel; }
+    :BNES38 R3_8_10, imm8s_rel is op11_14=0b1011 & R3_8_10 & imm8s_rel { if (R3_8_10 != a5) goto imm8s_rel; }
+    :BEQZS8 imm8s_rel is op8_14=0b1101000 & imm8s_rel { if (ta == 0) goto imm8s_rel; }
+    :BNEZS8 imm8s_rel is op8_14=0b1101001 & imm8s_rel { if (ta != 0) goto imm8s_rel; }
+
+    :BREAK16 swid9 is op9_14=0b110101 & swid9 { Exception_Breakpoint(swid9:2); }
+
+    :J8 imm8s_rel is op8_14=0b1010101 & imm8s_rel { goto imm8s_rel; }
+    :JR5   R5_0_4 is op5_14=0b1011101000 & R5_0_4 { goto [R5_0_4]; }
+    :JRAL5 R5_0_4 is op5_14=0b1011101001 & R5_0_4 { lp = inst_next; call [R5_0_4]; }
+
+    :RET5 R5_0_4 is op5_14=0b1011101100 & R5_0_4 { return [R5_0_4]; }
+
+    :MOV55  R5_5_9, R5_0_4 is op10_14=0b00000 & R5_5_9 & R5_0_4 { R5_5_9 = R5_0_4; }
+    :MOVI55 R5_5_9, imm5s  is op10_14=0b00001 & R5_5_9 & imm5s { R5_5_9 = imm5s; }
+
+    # special case of SRLI45 R0,0
+    :NOP16 is op9_14=0b001001 & R4_5_8=0 & R5_0_4=0 {}
+
+    :ADD333 R3_6_8, R3_3_5, R3_0_2 is op9_14=0b001100 & R3_6_8 & R3_3_5 & R3_0_2 { R3_6_8 = R3_3_5 + R3_0_2; }
+    :SUB333 R3_6_8, R3_3_5, R3_0_2 is op9_14=0b001101 & R3_6_8 & R3_3_5 & R3_0_2 { R3_6_8 = R3_3_5 - R3_0_2; }
+
+    :ADDI333 R3_6_8, R3_3_5, imm3u is op9_14=0b001110 & R3_6_8 & R3_3_5 & imm3u { R3_6_8 = R3_3_5 + imm3u; }
+    :SLLI333 R3_6_8, R3_3_5, imm3u is op9_14=0b001010 & R3_6_8 & R3_3_5 & imm3u { R3_6_8 = R3_3_5 << imm3u; }
+    :SUBI333 R3_6_8, R3_3_5, imm3u is op9_14=0b001111 & R3_6_8 & R3_3_5 & imm3u { R3_6_8 = R3_3_5 - imm3u; }
+
+    :ADD45   R4_5_8, R5_0_4 is op9_14=0b000100 & R4_5_8 & R5_0_4 { R4_5_8 = R4_5_8 + R5_0_4; }
+    :SLT45   R4_5_8, R5_0_4 is op9_14=0b110001 & R4_5_8 & R5_0_4 { ta = zext(R4_5_8 < R5_0_4); }
+    :SLTS45  R4_5_8, R5_0_4 is op9_14=0b110000 & R4_5_8 & R5_0_4 { ta = zext(R4_5_8 s< R5_0_4); }
+    :SUB45   R4_5_8, R5_0_4 is op9_14=0b000101 & R4_5_8 & R5_0_4 { R4_5_8 = R4_5_8 - R5_0_4; }
+
+    :ADDI45  R4_5_8, imm5u is op9_14=0b000110 & R4_5_8 & imm5u { R4_5_8 = R4_5_8 + imm5u; }
+    :SLTI45  R4_5_8, imm5u is op9_14=0b110011 & R4_5_8 & imm5u { ta = zext(R4_5_8 < imm5u); }
+    :SLTSI45 R4_5_8, imm5u is op9_14=0b110010 & R4_5_8 & imm5u { ta = zext(R4_5_8 s< imm5u); }
+    :SRAI45  R4_5_8, imm5u is op9_14=0b001000 & R4_5_8 & imm5u { R4_5_8 = R4_5_8 s>> imm5u; }
+    :SRLI45  R4_5_8, imm5u is op9_14=0b001001 & R4_5_8 & imm5u { R4_5_8 = R4_5_8 >> imm5u; }
+    :SUBI45  R4_5_8, imm5u is op9_14=0b000111 & R4_5_8 & imm5u { R4_5_8 = R4_5_8 - imm5u; }
+
+########## V2 Baseline
+    # XWI37SP
+    with : op11_14=0b1110 {
+        sprel: [+rel] is imm7u [rel = imm7u << 2;] { local addr:4 = sp + rel; export addr; }
+        :LWI37.sp R3_8_10, sprel is R3_8_10 & lwi37=0 & sprel { R3_8_10 = *:4 sprel; }
+        :SWI37.sp R3_8_10, sprel is R3_8_10 & lwi37=1 & sprel { *:4 sprel = R3_8_10:4; }
+    }
+    :ADDI10.sp imm10s is op10_14=0b11011 & imm10s { sp = sp + imm10s; }
+}
