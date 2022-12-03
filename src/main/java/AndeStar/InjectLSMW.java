@@ -116,6 +116,7 @@ public class InjectLSMW extends InjectPayloadCallother {
 
 		// BUG: the writeback does not flow to the successive instructions for some
 		// reason. Because the inject type is CALLOTHERFIXUP_TYPE?
+		/*
 		if (Modify != 0) {
 			if (IncDec == 0) {
 				// Ra += totalSize;
@@ -125,6 +126,7 @@ public class InjectLSMW extends InjectPayloadCallother {
 				opList.add(new PcodeOp(opAddress, seqnum++, PcodeOp.INT_SUB, new Varnode[] { Ra, numBytes }, Ra));
 			}
 		}
+		// */
 
 		PcodeOp[] res = new PcodeOp[opList.size()];
 		opList.toArray(res);
