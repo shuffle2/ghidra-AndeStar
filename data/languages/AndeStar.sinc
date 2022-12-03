@@ -93,6 +93,7 @@ define token instr32(32) endian=big
     u8_9    =   (8,9)
     u7_9    =   (7,9)
     u5_9    =   (5,9)
+    u5_9i   =   (5,9)
     u6_7    =   (6,7)
     u0_7    =   (0,7)
     u0_5    =   (0,5)
@@ -133,7 +134,10 @@ define token instr16(16) endian=big
 ;
 
 # GPRs - 32/16bit instructions, 5bit index
-attach variables [u20_24 u15_19 u10_14 R5_0_4 R5_5_9] [
+attach variables [
+    u20_24 u15_19 u10_14 u5_9
+    R5_5_9 R5_0_4
+] [
     a0 a1 a2 a3 a4 a5
     s0 s1 s2 s3 s4 s5 s6 s7 s8
     ta
@@ -191,7 +195,7 @@ macro goto_next_if_not(cond) {
 
 with : isa=0 {
     # ALU_1
-    with : opc=0b100000 & u5_9=0 {
+    with : opc=0b100000 & u5_9i=0 {
         :ADD   u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00000 { u20_24 =   u15_19 + u10_14; }
         :AND   u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00010 { u20_24 =   u15_19 & u10_14; }
         :OR    u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00100 { u20_24 =   u15_19 | u10_14; }
@@ -362,17 +366,17 @@ with : isa=0 {
         :TEQZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00110 { goto_next_if_not(u20_24 == 0); Exception_Trap(u5_19:2); }
         :TNEZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00111 { goto_next_if_not(u20_24 != 0); Exception_Trap(u5_19:2); }
 
-        :CCTL u20_24, u15_19, u5_9, u10_10 is u20_24 & u15_19 & u11_14=0 & u10_10 & u5_9 & subop=0b00001 {
-            cctl(u20_24:1, u15_19:1, u5_9:1, u10_10:1);
+        :CCTL u20_24, u15_19, u5_9i, u10_10 is u20_24 & u15_19 & u11_14=0 & u10_10 & u5_9i & subop=0b00001 {
+            cctl(u20_24:1, u15_19:1, u5_9i:1, u10_10:1);
         }
         :DSB is u20_24=0 & u5_19=0 & subop=0b01000 { dsb(); }
         :ISB is u20_24=0 & u5_19=0 & subop=0b01001 { isb(); }
         :ISYNC u20_24 is u20_24 & u5_19=0 & subop=0b01101 { isync(u20_24:1); }
         :IRET is u20_24=0 & u5_19=0 & subop=0b00100 { return [ipc]; }
-        :MFSR u20_24, u10_19 is u20_24 & u10_19 & u5_9=0 & subop=0b00010 { u20_24 = mfsr(u10_19:3); }
-        :MTSR u20_24, u10_19 is u20_24 & u10_19 & u5_9=0 & subop=0b00011 { mtsr(u20_24:1, u10_19:3); }
-        :SETEND.^setend20 is u21_24=0 & setend20 & u10_19=0b0010000000 & u5_9=0b00001 & subop=0b00011 { setend(setend20:1); }
-        :SETGIE.^setgie20 is u21_24=0 & setgie20 & u10_19=0b0010000000 & u5_9=0b00010 & subop=0b00011 { setgie(setgie20:1); }
+        :MFSR u20_24, u10_19 is u20_24 & u10_19 & u5_9i=0 & subop=0b00010 { u20_24 = mfsr(u10_19:3); }
+        :MTSR u20_24, u10_19 is u20_24 & u10_19 & u5_9i=0 & subop=0b00011 { mtsr(u20_24:1, u10_19:3); }
+        :SETEND.^setend20 is u21_24=0 & setend20 & u10_19=0b0010000000 & u5_9i=0b00001 & subop=0b00011 { setend(setend20:1); }
+        :SETGIE.^setgie20 is u21_24=0 & setgie20 & u10_19=0b0010000000 & u5_9i=0b00010 & subop=0b00011 { setgie(setgie20:1); }
         :STANDBY is u20_24=0 & u10_19=0 & u7_9=0 & standby5_6 & subop=0b00000 { standby(standby5_6:1); }
     }
     # MEM
@@ -556,24 +560,21 @@ with : isa=0 {
 
     # ALU_1
     with : opc=0b100000 {
-        # TODO check div by zero and/or IDIVZE state
-        :DIVR  u20_24, u15_19, u10_14, u5_9 is u20_24 & u15_19 & u10_14 & u5_9 & subop=0b10111 {
-            local taddr:4 = &u20_24;
-            local saddr:4 = &u15_19;
-            local a:4 = u10_14;
-            local b:4 = u5_9;
+        # TODO check div by zero and IDIVZE state
+        # NOTE register order in disasm differs from instruction bitfield
+        :DIVR u20_24, u5_9, u15_19, u10_14 is u20_24 & u20_24i & u15_19 & u10_14 & u5_9 & u5_9i & subop=0b10111 {
+            local a:4 = u15_19;
+            local b:4 = u10_14;
             u20_24 = a / b;
-            if (taddr == saddr) goto inst_next;
-            u15_19 = a % b;
+            goto_next_if_not(u5_9i:1 != u20_24i:1);
+            u5_9 = a % b;
         }
-        :DIVSR u20_24, u15_19, u10_14, u5_9 is u20_24 & u15_19 & u10_14 & u5_9 & subop=0b10110 {
-            local taddr:4 = &u20_24;
-            local saddr:4 = &u15_19;
-            local a:4 = u10_14;
-            local b:4 = u5_9;
+        :DIVSR u20_24, u5_9, u15_19, u10_14 is u20_24 & u20_24i & u15_19 & u10_14 & u5_9 & u5_9i & subop=0b10110 {
+            local a:4 = u15_19;
+            local b:4 = u10_14;
             u20_24 = a s/ b;
-            if (taddr == saddr) goto inst_next;
-            u15_19 = a s% b;
+            goto_next_if_not(u5_9i:1 != u20_24i:1);
+            u5_9 = a s% b;
         }
     }
     # ALU_2
