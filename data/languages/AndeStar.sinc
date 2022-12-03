@@ -566,6 +566,7 @@ with : isa=0 {
             local a:4 = u15_19;
             local b:4 = u10_14;
             u20_24 = a / b;
+            # TODO dont emit pcode for this comparison, it could be constant
             goto_next_if_not(u5_9i:1 != u20_24i:1);
             u5_9 = a % b;
         }
