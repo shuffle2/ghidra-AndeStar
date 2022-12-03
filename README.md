@@ -24,4 +24,4 @@ cd AndeStar
 gradle
 ```
 
-The generated `.zip` int `dist` should then be extracted to `${GHIDRA_INSTALL_DIR}/Ghidra/Processors`.
+The generated `.zip` in `dist` should then be extracted to `${GHIDRA_INSTALL_DIR}/Ghidra/Processors`.
