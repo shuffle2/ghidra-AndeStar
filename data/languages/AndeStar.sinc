@@ -18,14 +18,56 @@ define register offset=0 size=4 [
 
 # USRs
 define register offset=0x80 size=8 [d0 d1];
-define register offset=0x80 size=4 [d0.hi d0.lo d1.hi d1.lo];
+define register offset=0x80 size=4 [d0.hi d0.lo d1.hi d1.lo IFC_LP]; # TODO IFC_LP is 29
 
 # TODO implement SRs. hacky impl for IRET for now
 # SR Encoding is 10bits. 3 Major, 4 Minor, 3 Extension
-define register offset=0x90 size=4 [ipc IFC_ON IFC_LP];
+# PSW = ir0 (1, 0, 0)
+# IPC = ir9 (1, 0, 1)
+define register offset=0xa0 size=4 [PSW IPC];
+
+# NOTE other languages use @defines instead of bitrange - why?
+define bitrange
+    PSW.GIE     =PSW[0,1]
+    PSW.INTL    =PSW[1,2]
+    PSW.POM     =PSW[3,2]
+    PSW.BE      =PSW[5,1]
+    PSW.IT      =PSW[6,1]
+    PSW.DT      =PSW[7,1]
+    PSW.IME     =PSW[8,1]
+    PSW.DME     =PSW[9,1]
+    PSW.DEX     =PSW[10,1]
+    PSW.HSS     =PSW[11,1]
+    PSW.DRBE    =PSW[12,1]
+    PSW.AEN     =PSW[13,1]
+    PSW.WBNA    =PSW[14,1]
+    PSW.IFCON   =PSW[15,1]
+    PSW.CPL     =PSW[16,2]
+    PSW.OV      =PSW[20,1]
+    PSW.PFT_EN  =PSW[21,1]
+    PSW.PNP     =PSW[22,1];
+
+#@define PSW.GIE     "PSW[0,1]"
+#@define PSW.INTL    "PSW[1,2]"
+#@define PSW.POM     "PSW[3,2]"
+#@define PSW.BE      "PSW[5,1]"
+#@define PSW.IT      "PSW[6,1]"
+#@define PSW.DT      "PSW[7,1]"
+#@define PSW.IME     "PSW[8,1]"
+#@define PSW.DME     "PSW[9,1]"
+#@define PSW.DEX     "PSW[10,1]"
+#@define PSW.HSS     "PSW[11,1]"
+#@define PSW.DRBE    "PSW[12,1]"
+#@define PSW.AEN     "PSW[13,1]"
+#@define PSW.WBNA    "PSW[14,1]"
+#@define PSW.IFCON   "PSW[15,1]"
+#@define PSW.CPL     "PSW[16,2]"
+#@define PSW.OV      "PSW[20,1]"
+#@define PSW.PFT_EN  "PSW[21,1]"
+#@define PSW.PNP     "PSW[22,1]"
 
 # ghidra state
-define register offset=0xa0 size=4 [bi_addr];
+define register offset=0xb0 size=4 [bi_addr];
 
 # valid if isa=0
 define token instr32(32) endian=big
@@ -395,7 +437,7 @@ with : isa=0 {
         :DSB is u20_24=0 & u5_19=0 & subop=0b01000 { dsb(); }
         :ISB is u20_24=0 & u5_19=0 & subop=0b01001 { isb(); }
         :ISYNC u20_24 is u20_24 & u5_19=0 & subop=0b01101 { isync(u20_24:1); }
-        :IRET is u20_24=0 & u5_19=0 & subop=0b00100 { return [ipc]; }
+        :IRET is u20_24=0 & u5_19=0 & subop=0b00100 { return [IPC]; }
         :MFSR u20_24, u10_19 is u20_24 & u10_19 & u5_9i=0 & subop=0b00010 { u20_24 = mfsr(u10_19:3); }
         :MTSR u20_24, u10_19 is u20_24 & u10_19 & u5_9i=0 & subop=0b00011 { mtsr(u20_24:1, u10_19:3); }
         :SETEND.^setend20 is u21_24=0 & setend20 & u10_19=0b0010000000 & u5_9i=0b00001 & subop=0b00011 { setend(setend20:1); }
@@ -713,7 +755,7 @@ with : isa=0 {
     with : opc=0b100111 & u16_19=0b0000 {
         :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel {
             IFC_LP = inst_next;
-            IFC_ON = 1;
+            PSW.IFCON = 1;
             goto imm16s_rel;
         }
 
@@ -725,8 +767,8 @@ with : isa=0 {
     with : opc=0b100101 {
         # haven't seen this used, but it's in binutils
         :IFRET is u20_24=0b00000 & u5_14=0b11 & subop=0b00000 {
-            goto_next_if_not(IFC_ON == 1);
-            IFC_ON = 0;
+            if (!PSW.IFCON) goto inst_next;
+            PSW.IFCON = 0;
             goto [IFC_LP];
         }
     }
@@ -821,7 +863,7 @@ with : isa_s=1 {
     :ADDI10.sp imm10s is op10_14=0b11011 & imm10s { sp = sp + imm10s; }
 
 ########## V3 Baseline
-    imm8u: imm is imm5u [imm = imm5u << 3;] { export imm; }
+    imm8u: imm is imm5u [imm = imm5u << 3;] { export *[const]:4 imm; }
     :ADDRI36.sp R3_6_8, imm8u is op9_14=0b011000 & R3_6_8 & imm8u { R3_6_8 = sp + imm8u; }
     :ADD5.pc R5_0_4 is op5_14=0b1011101101 & R5_0_4 { R5_0_4 = inst_start + R5_0_4; }
     # MISC33
@@ -839,7 +881,7 @@ with : isa_s=1 {
         :FEXTI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b111 { R3_6_8 = R3_6_8 & ((1 << (imm3u + 1)) - 1); }
     }
     # TODO sext?
-    imm7n: imm is imm5u [imm = (imm5u - 32) << 2;] { export imm; }
+    imm7n: imm is imm5u [imm = (imm5u - 32) << 2;] { export *[const]:4 imm; }
     :LWI45.FE R4_5_8, [imm7n] is op9_14=0b011001 & R4_5_8 & imm7n {
         R4_5_8 = *:4 (s2 + imm7n);
     }
@@ -851,7 +893,7 @@ with : isa_s=1 {
         *[register]:4 rt1 = *[register]:4 ra1;
         *[register]:4 rt2 = *[register]:4 ra2;
     }
-    imm6u: imm is imm5u [imm = imm5u + 16;] { export imm; }
+    imm6u: imm is imm5u [imm = imm5u + 16;] { export *[const]:4 imm; }
     :MOVPI45 R4_5_8, imm6u  is op9_14=0b111101 & R4_5_8 & imm6u { R4_5_8 = imm6u; }
 
     # Specialize all forms of PUSH25/POP25. there's only 4 cases each...
@@ -967,20 +1009,20 @@ with : isa_s=1 {
 ########## DSP ISA Extension
 
     # IFC_CTL is USR with 2 fields:
-    # IFC_LP retaddr
-    # IFC_ON set on call/cleared on ret
+    # IFC_LP (USR 0:29) link pointer
+    # PSW.IFCON set on ifcall/cleared on ifret
     # TODO IFCALL9/IFRET16 aren't documented.
     # is it really 9bits of displacement, or 8?
     imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
     :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
         IFC_LP = inst_next;
-        IFC_ON = 1;
+        PSW.IFCON = 1;
         goto imm9s_rel;
     }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
     :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
-        goto_next_if_not(IFC_ON == 1);
-        IFC_ON = 0;
+        if (!PSW.IFCON) goto inst_next;
+        PSW.IFCON = 0;
         goto [IFC_LP];
     }
 }
