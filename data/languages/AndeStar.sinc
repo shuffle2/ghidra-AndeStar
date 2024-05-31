@@ -22,10 +22,10 @@ define register offset=0x80 size=4 [d0.hi d0.lo d1.hi d1.lo];
 
 # TODO implement SRs. hacky impl for IRET for now
 # SR Encoding is 10bits. 3 Major, 4 Minor, 3 Extension
-define register offset=0x90 size=4 [ipc];
+define register offset=0x90 size=4 [ipc IFC_ON IFC_LP];
 
 # ghidra state
-define register offset=0x94 size=4 [bi_addr];
+define register offset=0xa0 size=4 [bi_addr];
 
 # valid if isa=0
 define token instr32(32) endian=big
@@ -37,7 +37,6 @@ define token instr32(32) endian=big
     dtlo21 = (21,21)
     dt21 = (21,21)
 
-    sbgp19 = (19,19)
     hwgp18_19=(18,19)
     hwgp17_19=(17,19)
 
@@ -68,18 +67,21 @@ define token instr32(32) endian=big
     u24_24  = (24,24)
     u20_24  = (20,24)
     u20_24i = (20,24)
+    u19_19  = (19,19)
     u15_24  = (15,24)
     u20_23  = (20,23)
     u16_19  = (16,19)
     u15_19  = (15,19)
+    u15_19i = (15,19)
     u5_19   =  (5,19)
-    u5_14=(5,14)
+    u5_14   =  (5,14)
     u14_14  = (14,14)
     u11_14  = (11,14)
     u10_19  = (10,19)
     u10_14  = (10,14)
     u10_14i = (10,14)
     u10_10  = (10,10)
+    s8_18   =  (8,18) signed
     u0_19   =  (0,19)
     s0_19   =  (0,19) signed
     u0_14   =  (0,14)
@@ -95,6 +97,7 @@ define token instr32(32) endian=big
     u5_9    =   (5,9)
     u5_9i   =   (5,9)
     u6_7    =   (6,7)
+    s0_7    =   (0,7) signed
     u0_7    =   (0,7)
     u0_5    =   (0,5)
     u5_7    =   (5,7)
@@ -109,6 +112,7 @@ define token instr16(16) endian=big
     op10_14 = (10,14)
     op9_14 = (9,14)
     op8_14 = (8,14)
+    op7_14 = (7,14)
     op5_14 = (5,14)
     subop0_2 = (0,2)
 
@@ -116,13 +120,20 @@ define token instr16(16) endian=big
     R5_0_4 = (0,4)
 
     R4_5_8 = (5,8)
+    R4_4_7 = (4,7)
+    R4_0_3 = (0,3)
 
     R3_8_10 = (8,10)
     R3_6_8 = (6,8)
     R3_3_5 = (3,5)
     R3_0_2 = (0,2)
 
-    swid9 = (0,8)
+    R2_5_6 = (5,6)
+
+    imm4u = (5,8)
+
+    imm9u = (0,8)
+    imm9s = (0,8) signed
     imm10s = (0,9) signed
     imm8s = (0,7) signed
     imm7u = (0,6)
@@ -155,6 +166,17 @@ attach variables [R4_5_8] [
 attach variables [R3_0_2 R3_3_5 R3_6_8 R3_8_10] [
     a0 a1 a2 a3 a4 a5
     s0 s1
+];
+attach variables [R2_5_6] [
+    s0 s2 s4 s8
+];
+# These fields index even registers
+attach variables [R4_0_3 R4_4_7] [
+    a0 a2 a4
+    s0 s2 s4 s6 s8
+    t0 t2 t4 t6 t8
+    p0
+    fp lp
 ];
 
 # USRs
@@ -270,8 +292,8 @@ with : isa=0 {
             local m:8 = a * b;
             dt21 = dt21 + m;
         }
-        :MFUSR u20_24, (u15_19, u10_14) is u20_24 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b100000 unimpl
-        :MTUSR u20_24, (u15_19, u10_14) is u20_24 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b100001 unimpl
+        :MFUSR u20_24, (= u15_19i, u10_14i) is u20_24 & u15_19i & u10_14i & u6_9=0 & subop0_5=0b100000 unimpl
+        :MTUSR u20_24, (= u15_19i, u10_14i) is u20_24 & u15_19i & u10_14i & u6_9=0 & subop0_5=0b100001 unimpl
     }
     # compute relative targets for branches
     imm14s_rel: rel is s0_13 [ rel = inst_start + (s0_13 << 1); ] { export *:4 rel; }
@@ -366,6 +388,7 @@ with : isa=0 {
         :TEQZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00110 { goto_next_if_not(u20_24 == 0); Exception_Trap(u5_19:2); }
         :TNEZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00111 { goto_next_if_not(u20_24 != 0); Exception_Trap(u5_19:2); }
 
+        # covers CCTL forms from V3 as well
         :CCTL u20_24, u15_19, u5_9i, u10_10 is u20_24 & u15_19 & u11_14=0 & u10_10 & u5_9i & subop=0b00001 {
             cctl(u20_24:1, u15_19:1, u5_9i:1, u10_10:1);
         }
@@ -619,13 +642,13 @@ with : isa=0 {
     }
     # LBGP
     with : opc=0b010111 {
-        :LBI.gp  u20_24, gprel19 is u20_24 & sbgp19=0 & gprel19 { u20_24 = zext(*:1 gprel19); }
-        :LBSI.gp u20_24, gprel19 is u20_24 & sbgp19=1 & gprel19 { u20_24 = sext(*:1 gprel19); }
+        :LBI.gp  u20_24, gprel19 is u20_24 & u19_19=0 & gprel19 { u20_24 = zext(*:1 gprel19); }
+        :LBSI.gp u20_24, gprel19 is u20_24 & u19_19=1 & gprel19 { u20_24 = sext(*:1 gprel19); }
     }
     # SBGP
     with : opc=0b011111 {
-        :SBI.gp u20_24, gprel19 is u20_24 & sbgp19=0 & gprel19 { *:1 gprel19 = u20_24:1; }
-        :ADDI.gp u20_24, s0_18 is u20_24 & sbgp19=1 & s0_18 { u20_24 = gp + s0_18; }
+        :SBI.gp u20_24, gprel19 is u20_24 & u19_19=0 & gprel19 { *:1 gprel19 = u20_24:1; }
+        :ADDI.gp u20_24, s0_18 is u20_24 & u19_19=1 & s0_18 { u20_24 = gp + s0_18; }
     }
     # HWGP
     with : opc=0b011110 {
@@ -635,6 +658,77 @@ with : isa=0 {
 
         :SHI.gp  u20_24, gprel18 is u20_24 & hwgp18_19=0b10  & gprel18 { *:2 gprel18 = u20_24:2; }
         :SWI.gp  u20_24, gprel17 is u20_24 & hwgp17_19=0b111 & gprel17 { *:4 gprel17 = u20_24:4; }
+    }
+
+############# V3 Baseline
+
+    # ALU_1
+    with : opc=0b100000 {
+        :BITC       u20_24, u15_19, u10_14        is u20_24 & u15_19 & u10_14 & u5_9i=0b00000 & subop=0b10010 { u20_24 = u15_19 & ~u10_14; }
+        :ADD_SLLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b00000 { u20_24 = u15_19 + (u10_14 << u5_9i); }
+        :ADD_SRLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b11100 { u20_24 = u15_19 + (u10_14 >> u5_9i); }
+        :AND_SLLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b00010 { u20_24 = u15_19 & (u10_14 << u5_9i); }
+        :AND_SRLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b11110 { u20_24 = u15_19 & (u10_14 >> u5_9i); }
+        :OR_SLLI    u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b00100 { u20_24 = u15_19 | (u10_14 << u5_9i); }
+        :OR_SRLI    u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b10101 { u20_24 = u15_19 | (u10_14 >> u5_9i); }
+        :SUB_SLLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b00001 { u20_24 = u15_19 - (u10_14 << u5_9i); }
+        :SUB_SRLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b11101 { u20_24 = u15_19 - (u10_14 >> u5_9i); }
+        :XOR_SLLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b00011 { u20_24 = u15_19 ^ (u10_14 << u5_9i); }
+        :XOR_SRLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b11111 { u20_24 = u15_19 ^ (u10_14 >> u5_9i); }
+    }
+    # BR3
+    with : opc=0b101101 {
+        imm8s_rel: rel is s0_7 [ rel = inst_start + (s0_7 << 1); ] { export *:4 rel; }
+        # TODO sext(s8_18)?
+        :BEQC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=0 { if u20_24 == s8_18 goto imm8s_rel; }
+        :BNEC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=1 { if u20_24 != s8_18 goto imm8s_rel; }
+    }
+    # BITCI
+    with : opc=0b110011 {
+        # TODO zext(u0_14)?
+        :BITCI u20_24, u15_19, u0_14 is u20_24 & u15_19 & u0_14 { u20_24 = u15_19 & ~u0_14; }
+    }
+    # JREG
+    with : opc=0b100101 & u5_9=0 {
+        :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 {
+            if (u10_14 == 0) goto inst_next;
+            u20_24 = inst_next;
+            goto [u10_14];
+        }
+        # special case for Rt=LP
+        :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 {
+            if (u10_14 == 0) goto inst_next;
+            lp = inst_next;
+            call [u10_14];
+        }
+        :JRNEZ      u10_14          is u20_24=0  & u10_14 & subop=0b00010 {
+            if (u10_14 == 0) goto inst_next;
+            goto [u10_14];
+        }
+    }
+
+############# DSP ISA Extension
+
+    # BR2 SOP0
+    with : opc=0b100111 & u16_19=0b0000 {
+        :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel {
+            IFC_LP = inst_next;
+            IFC_ON = 1;
+            goto imm16s_rel;
+        }
+
+        # ZOL Optional
+        :MTLBI imm16s_rel is u20_24=0b00001 & imm16s_rel unimpl #{ LB = inst_start + imm16s_rel; }
+        :MTLEI imm16s_rel is u20_24=0b00010 & imm16s_rel unimpl #{ LE = inst_start + imm16s_rel; }
+    }
+    # JREG
+    with : opc=0b100101 {
+        # haven't seen this used, but it's in binutils
+        :IFRET is u20_24=0b00000 & u5_14=0b11 & subop=0b00000 {
+            goto_next_if_not(IFC_ON == 1);
+            IFC_ON = 0;
+            goto [IFC_LP];
+        }
     }
 }
 
@@ -683,7 +777,8 @@ with : isa_s=1 {
     :BEQZS8 imm8s_rel is op8_14=0b1101000 & imm8s_rel { if (ta == 0) goto imm8s_rel; }
     :BNEZS8 imm8s_rel is op8_14=0b1101001 & imm8s_rel { if (ta != 0) goto imm8s_rel; }
 
-    :BREAK16 swid9 is op9_14=0b110101 & swid9 { Exception_Breakpoint(swid9:2); }
+    # V3 ISA modifies BREAK16 such that imm4u is zero. nonzero imm4u encodes EX9.IT instead.
+    :BREAK16 imm5u is op9_14=0b110101 & imm4u=0 & imm5u { Exception_Breakpoint(imm5u:1); }
 
     :J8 imm8s_rel is op8_14=0b1010101 & imm8s_rel { goto imm8s_rel; }
     :JR5   R5_0_4 is op5_14=0b1011101000 & R5_0_4 { goto [R5_0_4]; }
@@ -724,4 +819,168 @@ with : isa_s=1 {
         :SWI37.sp R3_8_10, sprel is R3_8_10 & lwi37=1 & sprel { *:4 sprel = R3_8_10:4; }
     }
     :ADDI10.sp imm10s is op10_14=0b11011 & imm10s { sp = sp + imm10s; }
+
+########## V3 Baseline
+    imm8u: imm is imm5u [imm = imm5u << 3;] { export imm; }
+    :ADDRI36.sp R3_6_8, imm8u is op9_14=0b011000 & R3_6_8 & imm8u { R3_6_8 = sp + imm8u; }
+    :ADD5.pc R5_0_4 is op5_14=0b1011101101 & R5_0_4 { R5_0_4 = inst_start + R5_0_4; }
+    # MISC33
+    with : op9_14=0b111111 {
+        :AND33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b110 { R3_6_8 = R3_6_8 & R3_3_5; }
+        :MUL33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b100 { R3_6_8 = R3_6_8 * R3_3_5; }
+        :NEG33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b010 { R3_6_8 = -R3_3_5; }
+        :NOT33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b011 { R3_6_8 = ~R3_3_5; }
+        :OR33   R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b111 { R3_6_8 = R3_6_8 | R3_3_5; }
+        :XOR33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b101 { R3_6_8 = R3_6_8 ^ R3_3_5; }
+    }
+    # BFMI333
+    with : op9_14=0b001011 {
+        :BMSKI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b110 { R3_6_8 = R3_6_8 & (1 << imm3u); }
+        :FEXTI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b111 { R3_6_8 = R3_6_8 & ((1 << (imm3u + 1)) - 1); }
+    }
+    # TODO sext?
+    imm7n: imm is imm5u [imm = (imm5u - 32) << 2;] { export imm; }
+    :LWI45.FE R4_5_8, [imm7n] is op9_14=0b011001 & R4_5_8 & imm7n {
+        R4_5_8 = *:4 (s2 + imm7n);
+    }
+    :MOVD44 R4_4_7, R4_0_3 is op8_14=0b1111101 & R4_4_7 & R4_0_3 {
+        local rt1:4 = &R4_4_7;
+        local rt2:4 = rt1 + 4;
+        local ra1:4 = &R4_0_3;
+        local ra2:4 = ra1 + 4;
+        *[register]:4 rt1 = *[register]:4 ra1;
+        *[register]:4 rt2 = *[register]:4 ra2;
+    }
+    imm6u: imm is imm5u [imm = imm5u + 16;] { export imm; }
+    :MOVPI45 R4_5_8, imm6u  is op9_14=0b111101 & R4_5_8 & imm6u { R4_5_8 = imm6u; }
+
+    # Specialize all forms of PUSH25/POP25. there's only 4 cases each...
+    # show arm-like register list (deviates from assembler spec / should probably change so ghidra UI highlights regs properly)
+    # XXX the processor writes registers to memory in ascending order. This impl descends to simplify logic.
+    macro push_reg(ri) {
+        sp = sp - 4;
+        *:4 sp = ri;
+    }
+    macro push25_prologue() {
+        push_reg(lp);
+        push_reg(gp);
+        push_reg(fp);
+    }
+    macro push25_epilog_0(imm8u) {
+        push_reg(s0);
+        sp = sp - imm8u;
+    }
+    macro push25_epilog_2(imm8u) {
+        push_reg(s2);
+        push_reg(s1);
+        push25_epilog_0(imm8u);
+        # store function entry point in r8
+        # only implicitly used by LWI45.FE
+        # NOT done for Re == 0
+        s2 = inst_start & ~0b11;
+    }
+    macro push25_epilog_4(imm8u) {
+        push_reg(s4);
+        push_reg(s3);
+        push25_epilog_2(imm8u);
+    }
+    macro push25_epilog_8(imm8u) {
+        push_reg(s8);
+        push_reg(s7);
+        push_reg(s6);
+        push_reg(s5);
+        push25_epilog_4(imm8u);
+    }
+    :PUSH25 "{s0,fp,gp,lp}", imm8u    is op7_14=0b11111000 & R2_5_6=0b00 & imm8u {
+        push25_prologue();
+        push25_epilog_0(imm8u);
+    }
+    :PUSH25 "{s0-s2,fp,gp,lp}", imm8u is op7_14=0b11111000 & R2_5_6=0b01 & imm8u {
+        push25_prologue();
+        push25_epilog_2(imm8u);
+    }
+    :PUSH25 "{s0-s4,fp,gp,lp}", imm8u is op7_14=0b11111000 & R2_5_6=0b10 & imm8u {
+        push25_prologue();
+        push25_epilog_4(imm8u);
+    }
+    :PUSH25 "{s0-s8,fp,gp,lp}", imm8u is op7_14=0b11111000 & R2_5_6=0b11 & imm8u {
+        push25_prologue();
+        push25_epilog_8(imm8u);
+    }
+    macro pop_reg(ri) {
+        ri = *:4 sp;
+        sp = sp + 4;
+    }
+    macro pop25_prologue_0() {
+        pop_reg(s0);
+    }
+    macro pop25_prologue_2() {
+        pop25_prologue_0();
+        pop_reg(s1);
+        pop_reg(s2);
+    }
+    macro pop25_prologue_4() {
+        pop25_prologue_2();
+        pop_reg(s3);
+        pop_reg(s4);
+    }
+    macro pop25_prologue_8() {
+        pop25_prologue_4();
+        pop_reg(s5);
+        pop_reg(s6);
+        pop_reg(s7);
+        pop_reg(s8);
+    }
+    macro pop25_epilogue() {
+        pop_reg(fp);
+        pop_reg(gp);
+        pop_reg(lp);
+        return [lp];
+    }
+    :POP25  "{s0,fp,gp,lp}", imm8u    is op7_14=0b11111001 & R2_5_6=0b00 & imm8u {
+        sp = sp + imm8u;
+        pop25_prologue_0();
+        pop25_epilogue();
+    }
+    :POP25  "{s0-s2,fp,gp,lp}", imm8u is op7_14=0b11111001 & R2_5_6=0b01 & imm8u {
+        sp = sp + imm8u;
+        pop25_prologue_2();
+        pop25_epilogue();
+    }
+    :POP25  "{s0-s4,fp,gp,lp}", imm8u is op7_14=0b11111001 & R2_5_6=0b10 & imm8u {
+        sp = sp + imm8u;
+        pop25_prologue_4();
+        pop25_epilogue();
+    }
+    :POP25  "{s0-s8,fp,gp,lp}", imm8u is op7_14=0b11111001 & R2_5_6=0b11 & imm8u {
+        sp = sp + imm8u;
+        pop25_prologue_8();
+        pop25_epilogue();
+    }
+
+########## EX9IT Extension
+
+    # indirect instruction execution from Instruction_Table
+    :EX9.IT imm9u is op9_14=0b110101 & imm9u unimpl
+    :EX9.IT imm5u is op5_14=0b1011101010 & imm5u unimpl
+
+########## DSP ISA Extension
+
+    # IFC_CTL is USR with 2 fields:
+    # IFC_LP retaddr
+    # IFC_ON set on call/cleared on ret
+    # TODO IFCALL9/IFRET16 aren't documented.
+    # is it really 9bits of displacement, or 8?
+    imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
+    :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
+        IFC_LP = inst_next;
+        IFC_ON = 1;
+        goto imm9s_rel;
+    }
+    # Special case of MOV55 encoding (Rt=sp, Ra=sp)
+    :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
+        goto_next_if_not(IFC_ON == 1);
+        IFC_ON = 0;
+        goto [IFC_LP];
+    }
 }
