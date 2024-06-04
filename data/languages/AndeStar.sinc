@@ -192,6 +192,7 @@ define token instr16(16) endian=big
     imm10s = (0,9) signed
     imm8s = (0,7) signed
     imm7u = (0,6)
+    imm6u = (0,5)
     imm5u = (0,4)
     imm5s = (0,4) signed
     imm3u = (0,2)
@@ -914,8 +915,10 @@ with : isa_s=1 {
     :ADDI10.sp imm10s is op10_14=0b11011 & imm10s { sp = sp + imm10s; }
 
 ########## V3 Baseline
-    imm8u: imm is imm5u [imm = imm5u << 3;] { export *[const]:4 imm; }
-    :ADDRI36.sp R3_6_8, imm8u is op9_14=0b011000 & R3_6_8 & imm8u { R3_6_8 = sp + imm8u; }
+    imm8u_5: imm is imm5u [imm = imm5u << 3;] { export *[const]:4 imm; }
+    imm8u_6: imm is imm6u [imm = imm6u << 2;] { export *[const]:4 imm; }
+
+    :ADDRI36.sp R3_6_8, imm8u_6 is op9_14=0b011000 & R3_6_8 & imm8u_6 { R3_6_8 = sp + imm8u_6; }
     :ADD5.pc R5_0_4 is op5_14=0b1011101101 & R5_0_4 { R5_0_4 = inst_start + R5_0_4; }
     # MISC33
     with : op9_14=0b111111 {
@@ -944,8 +947,8 @@ with : isa_s=1 {
         *[register]:4 rt1 = *[register]:4 ra1;
         *[register]:4 rt2 = *[register]:4 ra2;
     }
-    imm6u: imm is imm5u [imm = imm5u + 16;] { export *[const]:4 imm; }
-    :MOVPI45 R4_5_8, imm6u  is op9_14=0b111101 & R4_5_8 & imm6u { R4_5_8 = imm6u; }
+    imm6u_5: imm is imm5u [imm = imm5u + 16;] { export *[const]:4 imm; }
+    :MOVPI45 R4_5_8, imm6u_5  is op9_14=0b111101 & R4_5_8 & imm6u_5 { R4_5_8 = imm6u_5; }
 
     # Specialize all forms of PUSH25/POP25. there's only 4 cases each...
     # show arm-like register list (deviates from assembler spec / should probably change so ghidra UI highlights regs properly)
@@ -959,46 +962,46 @@ with : isa_s=1 {
         push_reg(gp);
         push_reg(fp);
     }
-    macro push25_epilog_0(imm8u) {
+    macro push25_epilog_0(imm8u_5) {
         push_reg(s0);
-        sp = sp - imm8u;
+        sp = sp - imm8u_5;
     }
-    macro push25_epilog_2(imm8u) {
+    macro push25_epilog_2(imm8u_5) {
         push_reg(s2);
         push_reg(s1);
-        push25_epilog_0(imm8u);
+        push25_epilog_0(imm8u_5);
         # store function entry point in r8
         # only implicitly used by LWI45.FE
         # NOT done for Re == 0
         s2 = inst_start & ~0b11;
     }
-    macro push25_epilog_4(imm8u) {
+    macro push25_epilog_4(imm8u_5) {
         push_reg(s4);
         push_reg(s3);
-        push25_epilog_2(imm8u);
+        push25_epilog_2(imm8u_5);
     }
-    macro push25_epilog_8(imm8u) {
+    macro push25_epilog_8(imm8u_5) {
         push_reg(s8);
         push_reg(s7);
         push_reg(s6);
         push_reg(s5);
-        push25_epilog_4(imm8u);
+        push25_epilog_4(imm8u_5);
     }
-    :PUSH25 "{s0,fp,gp,lp}", imm8u    is op7_14=0b11111000 & R2_5_6=0b00 & imm8u {
+    :PUSH25 "{s0,fp,gp,lp}", imm8u_5    is op7_14=0b11111000 & R2_5_6=0b00 & imm8u_5 {
         push25_prologue();
-        push25_epilog_0(imm8u);
+        push25_epilog_0(imm8u_5);
     }
-    :PUSH25 "{s0-s2,fp,gp,lp}", imm8u is op7_14=0b11111000 & R2_5_6=0b01 & imm8u {
+    :PUSH25 "{s0-s2,fp,gp,lp}", imm8u_5 is op7_14=0b11111000 & R2_5_6=0b01 & imm8u_5 {
         push25_prologue();
-        push25_epilog_2(imm8u);
+        push25_epilog_2(imm8u_5);
     }
-    :PUSH25 "{s0-s4,fp,gp,lp}", imm8u is op7_14=0b11111000 & R2_5_6=0b10 & imm8u {
+    :PUSH25 "{s0-s4,fp,gp,lp}", imm8u_5 is op7_14=0b11111000 & R2_5_6=0b10 & imm8u_5 {
         push25_prologue();
-        push25_epilog_4(imm8u);
+        push25_epilog_4(imm8u_5);
     }
-    :PUSH25 "{s0-s8,fp,gp,lp}", imm8u is op7_14=0b11111000 & R2_5_6=0b11 & imm8u {
+    :PUSH25 "{s0-s8,fp,gp,lp}", imm8u_5 is op7_14=0b11111000 & R2_5_6=0b11 & imm8u_5 {
         push25_prologue();
-        push25_epilog_8(imm8u);
+        push25_epilog_8(imm8u_5);
     }
     macro pop_reg(ri) {
         ri = *:4 sp;
@@ -1030,23 +1033,23 @@ with : isa_s=1 {
         pop_reg(lp);
         return [lp];
     }
-    :POP25  "{s0,fp,gp,lp}", imm8u    is op7_14=0b11111001 & R2_5_6=0b00 & imm8u {
-        sp = sp + imm8u;
+    :POP25  "{s0,fp,gp,lp}", imm8u_5    is op7_14=0b11111001 & R2_5_6=0b00 & imm8u_5 {
+        sp = sp + imm8u_5;
         pop25_prologue_0();
         pop25_epilogue();
     }
-    :POP25  "{s0-s2,fp,gp,lp}", imm8u is op7_14=0b11111001 & R2_5_6=0b01 & imm8u {
-        sp = sp + imm8u;
+    :POP25  "{s0-s2,fp,gp,lp}", imm8u_5 is op7_14=0b11111001 & R2_5_6=0b01 & imm8u_5 {
+        sp = sp + imm8u_5;
         pop25_prologue_2();
         pop25_epilogue();
     }
-    :POP25  "{s0-s4,fp,gp,lp}", imm8u is op7_14=0b11111001 & R2_5_6=0b10 & imm8u {
-        sp = sp + imm8u;
+    :POP25  "{s0-s4,fp,gp,lp}", imm8u_5 is op7_14=0b11111001 & R2_5_6=0b10 & imm8u_5 {
+        sp = sp + imm8u_5;
         pop25_prologue_4();
         pop25_epilogue();
     }
-    :POP25  "{s0-s8,fp,gp,lp}", imm8u is op7_14=0b11111001 & R2_5_6=0b11 & imm8u {
-        sp = sp + imm8u;
+    :POP25  "{s0-s8,fp,gp,lp}", imm8u_5 is op7_14=0b11111001 & R2_5_6=0b11 & imm8u_5 {
+        sp = sp + imm8u_5;
         pop25_prologue_8();
         pop25_epilogue();
     }

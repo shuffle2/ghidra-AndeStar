@@ -30,3 +30,8 @@ The generated `.zip` in `dist` should then be extracted to `${GHIDRA_INSTALL_DIR
 gradle && powershell -command "& { expand-archive -Force dist\ghidra_11.2_DEV_20240604_AndeStar.zip $Env:GHIDRA_INSTALL_DIR\Ghidra\Processors }"
 %GHIDRA_INSTALL_DIR%\ghidraRun.bat
 ```
+
+to test sleigh
+```
+%GHIDRA_INSTALL_DIR%\support\sleigh C:\src\ghidra\Ghidra\Processors\AndeStar\data\languages\AndeStar_le.slaspec
+```
