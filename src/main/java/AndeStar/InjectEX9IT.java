@@ -54,10 +54,13 @@ public class InjectEX9IT extends InjectPayloadCallother {
 
 		// TODO append the indirect mnemonic to disasm output somehow
 		// insn.addMnemonicReference(con.baseAddr, RefType.THUNK, SourceType.DEFAULT);
-		String insn_string = formatter.getRepresentationString(insn);
-		program.withTransaction("set EX9.IT comment", () -> {
-			program.getListing().setComment(con.baseAddr, CodeUnit.EOL_COMMENT, "{" + insn_string + "}");
-		});
+		Listing listing = program.getListing();
+		if (listing.getComment(CodeUnit.EOL_COMMENT, con.baseAddr) == null) {
+			String insn_string = formatter.getRepresentationString(insn);
+			program.withTransaction("set EX9.IT comment", () -> {
+				listing.setComment(con.baseAddr, CodeUnit.EOL_COMMENT, "{" + insn_string + "}");
+			});
+		}
 
 		return insn.getPcode();
 	}
