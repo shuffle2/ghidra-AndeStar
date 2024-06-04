@@ -2,6 +2,7 @@ package AndeStar;
 
 import java.lang.reflect.Array;
 import java.math.BigInteger;
+import java.util.Arrays;
 
 import ghidra.app.plugin.processors.sleigh.SleighLanguage;
 import ghidra.program.model.address.Address;
@@ -72,10 +73,10 @@ public class InjectEX9IT extends InjectPayloadCallother {
 		// if JAL : R30 = PC + 2; PC = concat(PC[31,25], (Inst[23,0] << 1))
 		// JRAL, JRAL.xTON, JRALNEZ, BGEZAL, BLTZAL: RT = PC + 2
 		// TODO This is still not fixed (the ITMode=1 sleigh code is never reached)
-		if (mnem == "J" || mnem == "JAL") {
-			// A hack to use existing sleigh code to compute the correct jump target
-			// address.
-			insn = disasmAt(program, ex9itAddr.getNewAddress(ex9itAddr.getOffset() & 0xfe000000), fetchAddr);
+		String[] hack = { "J", "JAL" };
+		if (Arrays.asList(hack).contains(mnem)) {
+			// HACK: Use existing sleigh code to compute the correct jump target address.
+			insn = disasmAt(program, defaultSpace.getAddress(ex9itAddr.getOffset() & 0xfe000000), fetchAddr);
 			// Should never happen
 			if (insn == null) {
 				return EMPTY_PCODEOP;
