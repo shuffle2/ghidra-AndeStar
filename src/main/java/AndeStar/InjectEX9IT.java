@@ -1,19 +1,22 @@
 package AndeStar;
 
+import java.lang.reflect.Array;
+import java.math.BigInteger;
+import java.util.Arrays;
+
 import ghidra.app.plugin.processors.sleigh.SleighLanguage;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.InjectContext;
 import ghidra.program.model.lang.InjectPayloadCallother;
-import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.app.util.PseudoDisassembler;
 import ghidra.app.util.PseudoInstruction;
-import ghidra.program.model.listing.CodeUnitFormat;
-import ghidra.program.model.listing.CodeUnitFormatOptions;
 
 public class InjectEX9IT extends InjectPayloadCallother {
+	private PcodeOp[] EMPTY_PCODEOP = new PcodeOp[0];
+	private int INSTRUCTION_TABLE_ENTRY_LENGTH = 4;
 	private SleighLanguage language;
 	private AddressSpace defaultSpace;
 	private CodeUnitFormat formatter;
@@ -25,41 +28,66 @@ public class InjectEX9IT extends InjectPayloadCallother {
 		formatter = new CodeUnitFormat(new CodeUnitFormatOptions());
 	}
 
+	PseudoInstruction disasmAt(Program program, Address disasmAddr, Address fetchAddr) {
+		PseudoDisassembler disassembler = new PseudoDisassembler(program);
+		byte[] data = new byte[INSTRUCTION_TABLE_ENTRY_LENGTH];
+		try {
+			if (program.getMemory().getBytes(fetchAddr, data) != Array.getLength(data)) {
+				return null;
+			}
+			return disassembler.disassemble(disasmAddr, data);
+		} catch (Exception ex) {
+			return null;
+		}
+	}
+
 	@Override
 	public PcodeOp[] getPcode(Program program, InjectContext con) {
+		Address ex9itAddr = con.baseAddr;
 		int imm9u = (int) con.inputlist.get(0).getOffset();
+		int itOffset = imm9u * INSTRUCTION_TABLE_ENTRY_LENGTH;
 
-		Address ITB = language.getRegister("ITB").getAddress();
-		// TODO get VALUE of ITB reg. note the address has the offset into register space
-		ITB = ITB.getNewAddress(0xa38c);
-		long offset = (ITB.getOffset() & ~0b11) + imm9u * 4;
-		Address insn_addr = defaultSpace.getAddress(offset);
-
-		PseudoInstruction insn = null;
-		PseudoDisassembler disassembler = new PseudoDisassembler(program);
-		try {
-			insn = disassembler.disassemble(insn_addr);
-		} catch (Exception ex) {
-			throw new IllegalArgumentException("disasm " + insn_addr.toString() + " " + ex.getMessage());
+		BigInteger ITB = program.getProgramContext().getValue(language.getRegister("ITB"), ex9itAddr, false);
+		if (ITB == null) {
+			return EMPTY_PCODEOP;
 		}
-		// could be bad ITB
+		long memOffset = (ITB.longValue() & ~0b11) + itOffset;
+
+		Address fetchAddr = defaultSpace.getAddress(memOffset);
+		PseudoInstruction insn = disasmAt(program, ex9itAddr, fetchAddr);
+		// Could be bad ITB
 		if (insn == null) {
-			throw new IllegalArgumentException("insn null " + insn_addr.toString());
-		}
-		// check insn isn't another ex9it (this probably works on hw, but we want to
-		// prevent unbounded recursion)
-		if (insn.getMnemonicString() == "EX9.IT") {
-			throw new IllegalArgumentException("recursive EX9.IT " + insn_addr.toString());
+			return EMPTY_PCODEOP;
 		}
 
-		// TODO append the indirect mnemonic to disasm output somehow
-		// insn.addMnemonicReference(con.baseAddr, RefType.THUNK, SourceType.DEFAULT);
+		// Set comment if there's a valid insn referenced.
+		// TODO append the referenced instruction in a more disassembler-aware way
 		Listing listing = program.getListing();
-		if (listing.getComment(CodeUnit.EOL_COMMENT, con.baseAddr) == null) {
-			String insn_string = formatter.getRepresentationString(insn);
+		if (listing.getComment(CodeUnit.EOL_COMMENT, ex9itAddr) == null) {
+			// getRepresentationString is also slow
+			String ex9itComment = formatter.getRepresentationString(insn);
 			program.withTransaction("set EX9.IT comment", () -> {
-				listing.setComment(con.baseAddr, CodeUnit.EOL_COMMENT, "{" + insn_string + "}");
+				listing.setComment(ex9itAddr, CodeUnit.EOL_COMMENT,
+						String.format("%s {%s}", fetchAddr.toString(), ex9itComment));
 			});
+		}
+
+		String mnem = insn.getMnemonicString();
+		if (mnem == "EX9.IT") {
+			// hw would generate Reserved Instruction Exception
+			return EMPTY_PCODEOP;
+		}
+
+		// 32bit insns which use inst_next (PC + 4) need to be fixed up to use PC + 2,
+		// since EX9.IT is 16bit.
+		// if J : PC = concat(PC[31,25], (Inst[23,0] << 1)) // difference is it's not
+		// signed?
+		// if JAL : R30 = PC + 2; PC = concat(PC[31,25], (Inst[23,0] << 1))
+		// JRAL, JRAL.xTON, JRALNEZ, BGEAL, BLTZAL: RT = PC + 2
+		String[] pcRel = { "J", "JAL", "JRAL", "JRAL.xTON", "JRALNEZ", "BGEAL", "BLTZAL" };
+		if (Arrays.asList(pcRel).contains(mnem)) {
+			// TODO
+			return EMPTY_PCODEOP;
 		}
 
 		return insn.getPcode();

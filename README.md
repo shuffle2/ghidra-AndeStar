@@ -25,3 +25,8 @@ gradle
 ```
 
 The generated `.zip` in `dist` should then be extracted to `${GHIDRA_INSTALL_DIR}/Ghidra/Processors`.
+
+``` powershell
+gradle && powershell -command "& { expand-archive -Force dist\ghidra_11.2_DEV_20240604_AndeStar.zip $Env:GHIDRA_INSTALL_DIR\Ghidra\Processors }"
+%GHIDRA_INSTALL_DIR%\ghidraRun.bat
+```

@@ -767,6 +767,8 @@ with : isa=0 {
             IFC_LP = inst_next;
             PSW.IFCON = 1;
             goto imm16s_rel;
+            // HACK to prevent decompiler improperly creating CALL_TERMINATOR
+            goto inst_next;
         }
 
         # ZOL Optional
@@ -1013,7 +1015,7 @@ with : isa_s=1 {
 ########## EX9IT Extension
 
     # indirect instruction execution from Instruction_Table
-    :EX9.IT imm9u is op9_14=0b110101 & imm9u     { ex9it(imm9u:1); }
+    :EX9.IT imm9u is op9_14=0b110101 & imm9u     { ex9it(imm9u:2); }
     :EX9.IT imm5u is op5_14=0b1011101010 & imm5u { ex9it(imm5u:1); }
 
 ########## DSP ISA Extension
@@ -1024,6 +1026,8 @@ with : isa_s=1 {
         IFC_LP = inst_next;
         PSW.IFCON = 1;
         goto imm9s_rel;
+        // HACK to prevent decompiler improperly creating CALL_TERMINATOR
+        goto inst_next;
     }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
     :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
