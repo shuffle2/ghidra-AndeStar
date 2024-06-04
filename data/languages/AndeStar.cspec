@@ -98,4 +98,9 @@
             <input name="Modify"/>
         </pcode>
     </callotherfixup>
+    <callotherfixup targetop="ex9it">
+        <pcode dynamic="true">
+            <input name="imm9u"/>
+        </pcode>
+    </callotherfixup>
 </compiler_spec>

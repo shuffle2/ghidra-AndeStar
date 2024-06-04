@@ -16,15 +16,24 @@ define register offset=0 size=4 [
     fp gp lp sp
 ];
 
-# USRs
+# USRs - Group 0
 define register offset=0x80 size=8 [d0 d1];
-define register offset=0x80 size=4 [d0.hi d0.lo d1.hi d1.lo IFC_LP]; # TODO IFC_LP is 29
+define register offset=0x80 size=4 [
+    d0.hi d0.lo d1.hi d1.lo
+    _ _ _ _
+    _ _ _ _
+    _ _ _ _
+    _ _ _ _
+    _ _ _ _
+    _  LB LE LC
+    ITB IFC_LP _ PC
+];
 
 # TODO implement SRs. hacky impl for IRET for now
 # SR Encoding is 10bits. 3 Major, 4 Minor, 3 Extension
 # PSW = ir0 (1, 0, 0)
 # IPC = ir9 (1, 0, 1)
-define register offset=0xa0 size=4 [PSW IPC];
+define register offset=0x100 size=4 [PSW IPC];
 
 # NOTE other languages use @defines instead of bitrange - why?
 define bitrange
@@ -67,7 +76,7 @@ define bitrange
 #@define PSW.PNP     "PSW[22,1]"
 
 # ghidra state
-define register offset=0xb0 size=4 [bi_addr];
+define register offset=0x110 size=4 [bi_addr];
 
 # valid if isa=0
 define token instr32(32) endian=big
@@ -252,6 +261,7 @@ define pcodeop setgie;
 define pcodeop standby;
 define pcodeop lmw;
 define pcodeop smw;
+define pcodeop ex9it;
 
 macro goto_next_if_not(cond) {
     if (!cond) goto inst_next;
@@ -1003,16 +1013,12 @@ with : isa_s=1 {
 ########## EX9IT Extension
 
     # indirect instruction execution from Instruction_Table
-    :EX9.IT imm9u is op9_14=0b110101 & imm9u unimpl
-    :EX9.IT imm5u is op5_14=0b1011101010 & imm5u unimpl
+    :EX9.IT imm9u is op9_14=0b110101 & imm9u     { ex9it(imm9u:1); }
+    :EX9.IT imm5u is op5_14=0b1011101010 & imm5u { ex9it(imm5u:1); }
 
 ########## DSP ISA Extension
 
-    # IFC_CTL is USR with 2 fields:
-    # IFC_LP (USR 0:29) link pointer
-    # PSW.IFCON set on ifcall/cleared on ifret
-    # TODO IFCALL9/IFRET16 aren't documented.
-    # is it really 9bits of displacement, or 8?
+    # TODO flow analysis gets screwed up by IFCALL/IFRET
     imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
     :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
         IFC_LP = inst_next;
