@@ -2,7 +2,6 @@ package AndeStar;
 
 import java.lang.reflect.Array;
 import java.math.BigInteger;
-import java.util.Arrays;
 
 import ghidra.app.plugin.processors.sleigh.SleighLanguage;
 import ghidra.program.model.address.Address;
@@ -10,6 +9,7 @@ import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.InjectContext;
 import ghidra.program.model.lang.InjectPayloadCallother;
 import ghidra.program.model.listing.*;
+import ghidra.program.model.lang.Register;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.app.util.PseudoDisassembler;
 import ghidra.app.util.PseudoInstruction;
@@ -17,15 +17,15 @@ import ghidra.app.util.PseudoInstruction;
 public class InjectEX9IT extends InjectPayloadCallother {
 	private PcodeOp[] EMPTY_PCODEOP = new PcodeOp[0];
 	private int INSTRUCTION_TABLE_ENTRY_LENGTH = 4;
-	private SleighLanguage language;
 	private AddressSpace defaultSpace;
-	private CodeUnitFormat formatter;
+	private CodeUnitFormat codeUnitFormat;
+	private Register itbReg;
 
-	public InjectEX9IT(String sourceName, SleighLanguage language, long uniqueBase) {
+	public InjectEX9IT(String sourceName, SleighLanguage language) {
 		super(sourceName);
-		this.language = language;
+		itbReg = language.getRegister("ITB");
 		defaultSpace = language.getAddressFactory().getDefaultAddressSpace();
-		formatter = new CodeUnitFormat(new CodeUnitFormatOptions());
+		codeUnitFormat = new CodeUnitFormat(new CodeUnitFormatOptions());
 	}
 
 	PseudoInstruction disasmAt(Program program, Address disasmAddr, Address fetchAddr) {
@@ -47,7 +47,7 @@ public class InjectEX9IT extends InjectPayloadCallother {
 		int imm9u = (int) con.inputlist.get(0).getOffset();
 		int itOffset = imm9u * INSTRUCTION_TABLE_ENTRY_LENGTH;
 
-		BigInteger ITB = program.getProgramContext().getValue(language.getRegister("ITB"), ex9itAddr, false);
+		BigInteger ITB = program.getProgramContext().getValue(itbReg, ex9itAddr, false);
 		if (ITB == null) {
 			return EMPTY_PCODEOP;
 		}
@@ -60,18 +60,6 @@ public class InjectEX9IT extends InjectPayloadCallother {
 			return EMPTY_PCODEOP;
 		}
 
-		// Set comment if there's a valid insn referenced.
-		// TODO append the referenced instruction in a more disassembler-aware way
-		Listing listing = program.getListing();
-		if (listing.getComment(CodeUnit.EOL_COMMENT, ex9itAddr) == null) {
-			// getRepresentationString is also slow
-			String ex9itComment = formatter.getRepresentationString(insn);
-			program.withTransaction("set EX9.IT comment", () -> {
-				listing.setComment(ex9itAddr, CodeUnit.EOL_COMMENT,
-						String.format("%s {%s}", fetchAddr.toString(), ex9itComment));
-			});
-		}
-
 		String mnem = insn.getMnemonicString();
 		if (mnem == "EX9.IT") {
 			// hw would generate Reserved Instruction Exception
@@ -80,14 +68,30 @@ public class InjectEX9IT extends InjectPayloadCallother {
 
 		// 32bit insns which use inst_next (PC + 4) need to be fixed up to use PC + 2,
 		// since EX9.IT is 16bit.
-		// if J : PC = concat(PC[31,25], (Inst[23,0] << 1)) // difference is it's not
-		// signed?
+		// if J : PC = concat(PC[31,25], (Inst[23,0] << 1)) // not signed?
 		// if JAL : R30 = PC + 2; PC = concat(PC[31,25], (Inst[23,0] << 1))
-		// JRAL, JRAL.xTON, JRALNEZ, BGEAL, BLTZAL: RT = PC + 2
-		String[] pcRel = { "J", "JAL", "JRAL", "JRAL.xTON", "JRALNEZ", "BGEAL", "BLTZAL" };
-		if (Arrays.asList(pcRel).contains(mnem)) {
-			// TODO
-			return EMPTY_PCODEOP;
+		// JRAL, JRAL.xTON, JRALNEZ, BGEZAL, BLTZAL: RT = PC + 2
+		// TODO This is still not fixed (the ITMode=1 sleigh code is never reached)
+		if (mnem == "J" || mnem == "JAL") {
+			// A hack to use existing sleigh code to compute the correct jump target
+			// address.
+			insn = disasmAt(program, ex9itAddr.getNewAddress(ex9itAddr.getOffset() & 0xfe000000), fetchAddr);
+			// Should never happen
+			if (insn == null) {
+				return EMPTY_PCODEOP;
+			}
+		}
+
+		// Set comment if there's a valid insn referenced.
+		// TODO append the referenced instruction in a more disassembler-aware way
+		Listing listing = program.getListing();
+		if (listing.getComment(CodeUnit.EOL_COMMENT, ex9itAddr) == null) {
+			// getRepresentationString is also slow
+			String ex9itComment = codeUnitFormat.getRepresentationString(insn);
+			program.withTransaction("set EX9.IT comment", () -> {
+				listing.setComment(ex9itAddr, CodeUnit.EOL_COMMENT,
+						String.format("%s {%s}", fetchAddr.toString(), ex9itComment));
+			});
 		}
 
 		return insn.getPcode();

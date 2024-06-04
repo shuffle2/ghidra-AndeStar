@@ -25,7 +25,7 @@ public class PcodeInjectLibraryAndeStar extends PcodeInjectLibrary {
 		uniqueBase += 0x100;
 		implementedOps.put(SMW, new InjectLSMW(SOURCENAME, l, uniqueBase, true));
 		uniqueBase += 0x100;
-		implementedOps.put(EX9IT, new InjectEX9IT(SOURCENAME, l, uniqueBase));
+		implementedOps.put(EX9IT, new InjectEX9IT(SOURCENAME, l));
 		uniqueBase += 0x100;
 	}
 

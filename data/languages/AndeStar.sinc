@@ -76,7 +76,11 @@ define bitrange
 #@define PSW.PNP     "PSW[22,1]"
 
 # ghidra state
-define register offset=0x110 size=4 [bi_addr];
+define register offset=0x110 size=4 [bi_addr contextreg];
+
+define context contextreg
+    ITMode = (0,0) noflow
+;
 
 # valid if isa=0
 define token instr32(32) endian=big
@@ -263,10 +267,6 @@ define pcodeop lmw;
 define pcodeop smw;
 define pcodeop ex9it;
 
-macro goto_next_if_not(cond) {
-    if (!cond) goto inst_next;
-}
-
 with : isa=0 {
     # ALU_1
     with : opc=0b100000 & u5_9i=0 {
@@ -284,12 +284,14 @@ with : isa=0 {
             u20_24 = (u15_19 >> ra) | (u15_19 << (32 - ra));
         }
         :CMOVN u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11011 {
-            goto_next_if_not(u10_14 != 0);
+            if (!(u10_14 != 0)) goto <end>;
             u20_24 = u15_19;
+            <end>
         }
         :CMOVZ u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11010 {
-            goto_next_if_not(u10_14 == 0);
+            if (!(u10_14 == 0)) goto <end>;
             u20_24 = u15_19;
+            <end>
         }
         :SEB u20_24, u15_19 is u20_24 & u15_19 & u5_14=0 & subop=0b10000 { u20_24 = sext(u15_19:1); }
         :SEH u20_24, u15_19 is u20_24 & u15_19 & u5_14=0 & subop=0b10001 { u20_24 = sext(u15_19:2); }
@@ -330,7 +332,7 @@ with : isa=0 {
             local a = u15_19;
             local b = u10_14;
             local m = a * b;
-            dtlo21 = dtlo21 + m:4;
+            dtlo21 = dtlo21 + m;
         }
         :MADD64 dt21, u15_19, u10_14    is u22_24=0 & dt21   & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b101011 {
             local a:8 = zext(u15_19);
@@ -347,10 +349,15 @@ with : isa=0 {
         :MFUSR u20_24, (= u15_19i, u10_14i) is u20_24 & u15_19i & u10_14i & u6_9=0 & subop0_5=0b100000 unimpl
         :MTUSR u20_24, (= u15_19i, u10_14i) is u20_24 & u15_19i & u10_14i & u6_9=0 & subop0_5=0b100001 unimpl
     }
+
     # compute relative targets for branches
     imm14s_rel: rel is s0_13 [ rel = inst_start + (s0_13 << 1); ] { export *:4 rel; }
     imm16s_rel: rel is s0_15 [ rel = inst_start + (s0_15 << 1); ] { export *:4 rel; }
     imm24s_rel: rel is s0_23 [ rel = inst_start + (s0_23 << 1); ] { export *:4 rel; }
+
+    inst_next_it: addr is ITMode=0 [addr = inst_start + 4;] { export *:4 addr; }
+    inst_next_it: addr is ITMode=1 [addr = inst_start + 2;] { export *:4 addr; }
+
     # BR1
     with : opc=0b100110 {
         :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel { if (u20_24 == u15_19) goto imm14s_rel; }
@@ -364,25 +371,33 @@ with : isa=0 {
         :BLTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0101 & imm16s_rel { if (u20_24 s< 0) 	goto imm16s_rel; }
         :BGTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0110 & imm16s_rel { if (u20_24 s> 0) 	goto imm16s_rel; }
         :BLEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0111 & imm16s_rel { if (u20_24 s<= 0) goto imm16s_rel; }
-        :BGEZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1100 & imm16s_rel {
+        :BGEZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1100 & imm16s_rel & inst_next_it {
             local bcond = u20_24;
-            lp = inst_next;
-            goto_next_if_not(bcond s>= 0);
+            lp = inst_next_it;
+            if (!(bcond s>= 0)) goto <end>;
             call imm16s_rel;
+            <end>
         }
-        :BLTZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1101 & imm16s_rel {
+        :BLTZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1101 & imm16s_rel & inst_next_it {
             local bcond = u20_24;
-            lp = inst_next;
-            goto_next_if_not(bcond s< 0);
+            lp = inst_next_it;
+            if (!(bcond s< 0)) goto <end>;
             call imm16s_rel;
+            <end>
         }
     }
     # JI
     with : opc=0b100100 {
         :J   imm24s_rel is u24_24=0 & imm24s_rel { goto imm24s_rel; }
-        :JAL imm24s_rel is u24_24=1 & imm24s_rel {
-            lp = inst_next;
+        :JAL imm24s_rel is u24_24=1 & imm24s_rel & inst_next_it & ITMode=0 {
+            lp = inst_next_it;
             call imm24s_rel;
+        }
+        jal_dst_it: rel is s0_23 [ rel = (inst_start & 0xfe000000) | (s0_23 << 1); ] { export *:4 rel; }
+        :JAL jal_dst_it is u24_24=1 & jal_dst_it & inst_next_it & ITMode=1 {
+            lp = inst_next_it;
+            # call pcodeop implicitly uses inst_next which generates improper code xref at +4
+            call jal_dst_it;
         }
     }
     # JREG
@@ -395,39 +410,45 @@ with : isa=0 {
         }
         :JR."[T|IT]OFF" u10_14 is u15_24=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
             #PSW.IT = 0;
-            #if (u8_9 == 0b11) PSW.DT = 0;
+            #if (!(u8_9 == 0b11)) goto <do_branch>;
+            #    PSW.DT = 0;
+            #<do_branch>
             goto [u10_14];
         }
-        :JRAL u20_24, u10_14 is u20_24    & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 {
+        :JRAL u20_24, u10_14 is u20_24    & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
             local jaddr:4 = u10_14;
-            u20_24 = inst_next;
+            u20_24 = inst_next_it;
             goto [jaddr];
         }
         # special case for call
-        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 {
+        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
             local jaddr:4 = u10_14;
-            lp = inst_next;
+            lp = inst_next_it;
             call [jaddr];
         }
         # special case for return (from leaf function)
-        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u10_14i=30 & u8_9=0 & u5_7=0 & subop=0b00001 {
+        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u10_14i=30 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
             local jaddr:4 = u10_14;
-            lp = inst_next;
+            lp = inst_next_it;
             return [jaddr];
         }
-        :JRAL."[T|IT]ON" u20_24, u10_14 is u20_24     & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
+        :JRAL."[T|IT]ON" u20_24, u10_14 is u20_24     & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & inst_next_it {
             local jaddr:4 = u10_14;
-            u20_24 = inst_next;
+            u20_24 = inst_next_it;
             #PSW.IT = 1;
-            #if (u8_9 == 0b11) PSW.DT = 1;
+            #if (!(u8_9 == 0b11)) goto <do_branch>;
+            #    PSW.DT = 1;
+            #<do_branch>
             goto [jaddr];
         }
         # special case for call
-        :JRAL."[T|IT]ON" u10_14         is u20_24i=30 & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
+        :JRAL."[T|IT]ON" u10_14         is u20_24i=30 & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & inst_next_it {
             local jaddr:4 = u10_14;
-            lp = inst_next;
+            lp = inst_next_it;
             #PSW.IT = 1;
-            #if (u8_9 == 0b11) PSW.DT = 1;
+            #if (!(u8_9 == 0b11)) goto <do_branch>;
+            #    PSW.DT = 1;
+            #<do_branch>
             call [jaddr];
         }
     }
@@ -437,8 +458,16 @@ with : isa=0 {
         :BREAK   u5_19 is u20_24=0 & u5_19 & subop=0b01010 { Exception_Breakpoint(u5_19:2); }
         :SYSCALL u5_19 is u20_24=0 & u5_19 & subop=0b01011 { Exception_System_Call(u5_19:2); }
         :TRAP    u5_19 is u20_24=0 & u5_19 & subop=0b00101 { Exception_Trap(u5_19:2); }
-        :TEQZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00110 { goto_next_if_not(u20_24 == 0); Exception_Trap(u5_19:2); }
-        :TNEZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00111 { goto_next_if_not(u20_24 != 0); Exception_Trap(u5_19:2); }
+        :TEQZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00110 {
+            if (!(u20_24 == 0)) goto <end>;
+            Exception_Trap(u5_19:2);
+            <end>
+        }
+        :TNEZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00111 {
+            if (!(u20_24 != 0)) goto <end>;
+            Exception_Trap(u5_19:2);
+            <end>
+        }
 
         # covers CCTL forms from V3 as well
         :CCTL u20_24, u15_19, u5_9i, u10_10 is u20_24 & u15_19 & u11_14=0 & u10_10 & u5_9i & subop=0b00001 {
@@ -539,8 +568,8 @@ with : isa=0 {
     :LHI.bi   u20_24, addr21bi  is opc=0b000101 & u20_24 & u15_19 & addr21bi { u20_24 = zext(*:2 addr21bi); u15_19 = bi_addr; }
     :LHSI     u20_24, addr21    is opc=0b010001 & u20_24 &          addr21   { u20_24 = sext(*:2 addr21); }
     :LHSI.bi  u20_24, addr21bi  is opc=0b010101 & u20_24 & u15_19 & addr21bi { u20_24 = sext(*:2 addr21bi); u15_19 = bi_addr; }
-    :LWI      u20_24, addr22    is opc=0b000010 & u20_24 &          addr22   { u20_24 = zext(*:4 addr22); }
-    :LWI.bi   u20_24, addr22bi  is opc=0b000110 & u20_24 & u15_19 & addr22bi { u20_24 = zext(*:4 addr22bi); u15_19 = bi_addr; }
+    :LWI      u20_24, addr22    is opc=0b000010 & u20_24 &          addr22   { u20_24 = *:4 addr22; }
+    :LWI.bi   u20_24, addr22bi  is opc=0b000110 & u20_24 & u15_19 & addr22bi { u20_24 = *:4 addr22bi; u15_19 = bi_addr; }
 
     :SBI      u20_24, addr20    is opc=0b001000 & u20_24 &          addr20   { *:1 addr20   = u20_24:1; }
     :SBI.bi   u20_24, addr20bi  is opc=0b001100 & u20_24 & u15_19 & addr20bi { *:1 addr20bi = u20_24:1; u15_19 = bi_addr; }
@@ -569,12 +598,13 @@ with : isa=0 {
             if (ra s>= 0) goto <set_val>;
             if (ra == 0x80000000) goto <set_max>;
             u20_24 = -ra;
-            goto inst_next;
+            goto <end>;
             <set_val>
             u20_24 = ra;
-            goto inst_next;
+            goto <end>;
             <set_max>
             u20_24 = 0x7fffffff;
+            <end>
         }
         :AVE   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000010 unimpl
         :BCLR  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001001 { u20_24 = u15_19 & ~(1 << u10_14i); }
@@ -588,12 +618,13 @@ with : isa=0 {
             if (ra s> max) goto <set_max>;
             if (ra s< min) goto <set_zero>;
             u20_24 = ra;
-            goto inst_next;
+            goto <end>;
             <set_max>
             u20_24 = max;
-            goto inst_next;
+            goto <end>;
             <set_zero>
             u20_24 = 0;
+            <end>
         }
         :CLIPS u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b000100 {
             local max:4 = (1 << u10_14i) - 1;
@@ -602,28 +633,31 @@ with : isa=0 {
             if (ra s> max) goto <set_max>;
             if (ra s< min) goto <set_zero>;
             u20_24 = ra;
-            goto inst_next;
+            goto <end>;
             <set_max>
             u20_24 = max;
-            goto inst_next;
+            goto <end>;
             <set_zero>
             u20_24 = 0;
+            <end>
         }
         :CLO   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000110 unimpl
         :CLZ   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000111 unimpl
         :MAX   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000000 {
             if (u15_19 s>= u10_14) goto <set_ra>;
             u20_24 = u10_14;
-            goto inst_next;
+            goto <end>;
             <set_ra>
             u20_24 = u15_19;
+            <end>
         }
         :MIN   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000001 {
             if (u15_19 s>= u10_14) goto <set_rb>;
             u20_24 = u15_19;
-            goto inst_next;
+            goto <end>;
             <set_rb>
             u20_24 = u10_14;
+            <end>
         }
     }
 
@@ -642,15 +676,17 @@ with : isa=0 {
             local b:4 = u10_14;
             u20_24 = a / b;
             # TODO dont emit pcode for this comparison, it could be constant
-            goto_next_if_not(u5_9i:1 != u20_24i:1);
+            if (!(u5_9i:1 != u20_24i:1)) goto <end>;
             u5_9 = a % b;
+            <end>
         }
         :DIVSR u20_24, u5_9, u15_19, u10_14 is u20_24 & u20_24i & u15_19 & u10_14 & u5_9 & u5_9i & subop=0b10110 {
             local a:4 = u15_19;
             local b:4 = u10_14;
             u20_24 = a s/ b;
-            goto_next_if_not(u5_9i:1 != u20_24i:1);
+            if (!(u5_9i:1 != u20_24i:1)) goto <end>;
             u5_9 = a s% b;
+            <end>
         }
     }
     # ALU_2
@@ -742,20 +778,23 @@ with : isa=0 {
     }
     # JREG
     with : opc=0b100101 & u5_9=0 {
-        :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 {
-            if (u10_14 == 0) goto inst_next;
-            u20_24 = inst_next;
+        :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 & inst_next_it {
+            if (!(u10_14 != 0)) goto <end>;
+            u20_24 = inst_next_it;
             goto [u10_14];
+            <end>
         }
         # special case for Rt=LP
-        :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 {
-            if (u10_14 == 0) goto inst_next;
-            lp = inst_next;
+        :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 & inst_next_it {
+            if (!(u10_14 != 0)) goto <end>;
+            lp = inst_next_it;
             call [u10_14];
+            <end>
         }
         :JRNEZ      u10_14          is u20_24=0  & u10_14 & subop=0b00010 {
-            if (u10_14 == 0) goto inst_next;
+            if (!(u10_14 != 0)) goto <end>;
             goto [u10_14];
+            <end>
         }
     }
 
@@ -763,12 +802,12 @@ with : isa=0 {
 
     # BR2 SOP0
     with : opc=0b100111 & u16_19=0b0000 {
-        :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel {
-            IFC_LP = inst_next;
+        :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel & inst_next_it {
+            IFC_LP = inst_next_it;
             PSW.IFCON = 1;
             goto imm16s_rel;
-            // HACK to prevent decompiler improperly creating CALL_TERMINATOR
-            goto inst_next;
+            # HACK to prevent decompiler improperly creating CALL_TERMINATOR
+            goto inst_next_it;
         }
 
         # ZOL Optional
@@ -778,8 +817,8 @@ with : isa=0 {
     # JREG
     with : opc=0b100101 {
         # haven't seen this used, but it's in binutils
-        :IFRET is u20_24=0b00000 & u5_14=0b11 & subop=0b00000 {
-            if (!PSW.IFCON) goto inst_next;
+        :IFRET is u20_24=0b00000 & u5_14=0b11 & subop=0b00000 & inst_next_it {
+            if (!PSW.IFCON) goto inst_next_it;
             PSW.IFCON = 0;
             goto [IFC_LP];
         }
@@ -1015,8 +1054,8 @@ with : isa_s=1 {
 ########## EX9IT Extension
 
     # indirect instruction execution from Instruction_Table
-    :EX9.IT imm9u is op9_14=0b110101 & imm9u     { ex9it(imm9u:2); }
-    :EX9.IT imm5u is op5_14=0b1011101010 & imm5u { ex9it(imm5u:1); }
+    :EX9.IT imm9u is op9_14=0b110101 & imm9u     [ ITMode=1; globalset(inst_start, ITMode); ] { ex9it(imm9u:2); }
+    :EX9.IT imm5u is op5_14=0b1011101010 & imm5u [ ITMode=1; globalset(inst_start, ITMode); ] { ex9it(imm5u:1); }
 
 ########## DSP ISA Extension
 
@@ -1026,7 +1065,7 @@ with : isa_s=1 {
         IFC_LP = inst_next;
         PSW.IFCON = 1;
         goto imm9s_rel;
-        // HACK to prevent decompiler improperly creating CALL_TERMINATOR
+        # HACK to prevent decompiler improperly creating CALL_TERMINATOR
         goto inst_next;
     }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
