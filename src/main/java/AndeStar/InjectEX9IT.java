@@ -55,7 +55,9 @@ public class InjectEX9IT extends InjectPayloadCallother {
 		long memOffset = (ITB.longValue() & ~0b11) + itOffset;
 
 		Address fetchAddr = defaultSpace.getAddress(memOffset);
-		PseudoInstruction insn = disasmAt(program, ex9itAddr, fetchAddr);
+		// HACK: disasm at addr 0 to make J/JAL work. Might make other things using
+		// inst_start incorrect.
+		PseudoInstruction insn = disasmAt(program, defaultSpace.getAddress(0), fetchAddr);
 		// Could be bad ITB
 		if (insn == null) {
 			return EMPTY_PCODEOP;
@@ -73,15 +75,6 @@ public class InjectEX9IT extends InjectPayloadCallother {
 		// if JAL : R30 = PC + 2; PC = concat(PC[31,25], (Inst[23,0] << 1))
 		// JRAL, JRAL.xTON, JRALNEZ, BGEZAL, BLTZAL: RT = PC + 2
 		// TODO This is still not fixed (the ITMode=1 sleigh code is never reached)
-		String[] hack = { "J", "JAL" };
-		if (Arrays.asList(hack).contains(mnem)) {
-			// HACK: Use existing sleigh code to compute the correct jump target address.
-			insn = disasmAt(program, defaultSpace.getAddress(ex9itAddr.getOffset() & 0xfe000000), fetchAddr);
-			// Should never happen
-			if (insn == null) {
-				return EMPTY_PCODEOP;
-			}
-		}
 
 		// Set comment if there's a valid insn referenced.
 		// TODO append the referenced instruction in a more disassembler-aware way
