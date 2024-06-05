@@ -16,17 +16,19 @@ define register offset=0 size=4 [
     fp gp lp sp
 ];
 
-# USRs - Group 0
+# USRs (User Special Registers)
 define register offset=0x80 size=8 [d0 d1];
 define register offset=0x80 size=4 [
+    # Group 0
     d0.hi d0.lo d1.hi d1.lo
-    _ _ _ _
-    _ _ _ _
-    _ _ _ _
-    _ _ _ _
-    _ _ _ _
-    _  LB LE LC
-    ITB IFC_LP _ PC
+    LB LE LC
+    ITB IFC_LP PC
+    # Group 1
+    DMA_CFG DMA_GCSW DMA_CHNSEL DMA_ACT DMA_SETUP DMA_ISADDR DMA_ESADDR DMA_TCNT DMA_STATUS DMA_2DSET
+    DMA_2DSCTL
+    # Group 2
+    PFMC0 PFMC1 PFMC2
+    PFM_CTL
 ];
 
 # TODO implement SRs. hacky impl for IRET for now
@@ -319,9 +321,15 @@ with : isa=0 {
         :SLTS u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00111 { u20_24 = zext(u15_19 s< u10_14); }
 
         :SUB  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00001 { u20_24 = u15_19 - u10_14; }
-        :SVA  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11000 unimpl
-        :SVS  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11001 unimpl
-        :WSBH u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b10100 unimpl
+        :SVA  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11000 { u20_24 = zext(scarry(u15_19, u10_14)); }
+        :SVS  u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11001 { u20_24 = zext(sborrow(u15_19, u10_14)); }
+        :WSBH u20_24, u15_19 is u20_24 & u15_19 & u10_14=0 & subop=0b10100 {
+            u20_24 =
+                ((u15_19 & 0x000000ff) << 8) |
+                ((u15_19 & 0x0000ff00) >> 8) |
+                ((u15_19 & 0x00ff0000) << 8) |
+                ((u15_19 & 0xff000000) >> 8);
+        }
     }
     # ALU_2
     with : opc=0b100001 {
@@ -347,7 +355,35 @@ with : isa=0 {
             local m:8 = a * b;
             dt21 = dt21 + m;
         }
+
+        USR_Name: d0.hi         is d0.hi    & u10_14i=0 & u15_19i=0 { export d0.hi; }
+        USR_Name: d0.lo         is d0.lo    & u10_14i=0 & u15_19i=1 { export d0.lo; }
+        USR_Name: d1.hi         is d1.hi    & u10_14i=0 & u15_19i=2 { export d1.hi; }
+        USR_Name: d1.lo         is d1.lo    & u10_14i=0 & u15_19i=3 { export d1.lo; }
+        USR_Name: LB            is LB       & u10_14i=0 & u15_19i=25 { export LB; }
+        USR_Name: LE            is LE       & u10_14i=0 & u15_19i=26 { export LE; }
+        USR_Name: LC            is LC       & u10_14i=0 & u15_19i=27 { export LC; }
+        USR_Name: ITB           is ITB      & u10_14i=0 & u15_19i=28 { export ITB; }
+        USR_Name: IFC_LP        is IFC_LP   & u10_14i=0 & u15_19i=29 { export IFC_LP; }
+        USR_Name: PC            is PC       & u10_14i=0 & u15_19i=31 { export PC; }
+        USR_Name: DMA_CFG       is DMA_CFG      & u10_14i=1 & u15_19i=0 { export DMA_CFG; }
+        USR_Name: DMA_GCSW      is DMA_GCSW     & u10_14i=1 & u15_19i=1 { export DMA_GCSW; }
+        USR_Name: DMA_CHNSEL    is DMA_CHNSEL   & u10_14i=1 & u15_19i=2 { export DMA_CHNSEL; }
+        USR_Name: DMA_ACT       is DMA_ACT      & u10_14i=1 & u15_19i=3 { export DMA_ACT; }
+        USR_Name: DMA_SETUP     is DMA_SETUP    & u10_14i=1 & u15_19i=4 { export DMA_SETUP; }
+        USR_Name: DMA_ISADDR    is DMA_ISADDR   & u10_14i=1 & u15_19i=5 { export DMA_ISADDR; }
+        USR_Name: DMA_ESADDR    is DMA_ESADDR   & u10_14i=1 & u15_19i=6 { export DMA_ESADDR; }
+        USR_Name: DMA_TCNT      is DMA_TCNT     & u10_14i=1 & u15_19i=7 { export DMA_TCNT; }
+        USR_Name: DMA_STATUS    is DMA_STATUS   & u10_14i=1 & u15_19i=8 { export DMA_STATUS; }
+        USR_Name: DMA_2DSET     is DMA_2DSET    & u10_14i=1 & u15_19i=9 { export DMA_2DSET; }
+        USR_Name: DMA_2DSCTL    is DMA_2DSCTL   & u10_14i=1 & u15_19i=25 { export DMA_2DSCTL; }
+        USR_Name: PFMC0    is PFMC0   & u10_14i=2 & u15_19i=0 { export PFMC0; }
+        USR_Name: PFMC1    is PFMC1   & u10_14i=2 & u15_19i=1 { export PFMC1; }
+        USR_Name: PFMC2    is PFMC2   & u10_14i=2 & u15_19i=2 { export PFMC2; }
+        USR_Name: PFM_CTL  is PFM_CTL & u10_14i=2 & u15_19i=4 { export PFM_CTL; }
+        :MFUSR u20_24, USR_Name is u20_24 & USR_Name & u6_9=0 & subop0_5=0b100000 { u20_24 = USR_Name; }
         :MFUSR u20_24, (= u15_19i, u10_14i) is u20_24 & u15_19i & u10_14i & u6_9=0 & subop0_5=0b100000 unimpl
+        :MTUSR u20_24, USR_Name is u20_24 & USR_Name & u6_9=0 & subop0_5=0b100001 { USR_Name = u20_24; }
         :MTUSR u20_24, (= u15_19i, u10_14i) is u20_24 & u15_19i & u10_14i & u6_9=0 & subop0_5=0b100001 unimpl
     }
 
@@ -607,7 +643,7 @@ with : isa=0 {
             u20_24 = 0x7fffffff;
             <end>
         }
-        :AVE   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000010 unimpl
+        :AVE   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000010 { u20_24 = (u15_19 + u10_14) s>> 2; }
         :BCLR  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001001 { u20_24 = u15_19 & ~(1 << u10_14i); }
         :BSET  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001000 { u20_24 = u15_19 |  (1 << u10_14i); }
         :BTGL  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001010 { u20_24 = u15_19 ^  (1 << u10_14i); }
@@ -642,8 +678,8 @@ with : isa=0 {
             u20_24 = 0;
             <end>
         }
-        :CLO   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000110 unimpl
-        :CLZ   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000111 unimpl
+        :CLO   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000110 { u20_24 = lzcount(~u15_19); }
+        :CLZ   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000111 { u20_24 = lzcount(u15_19); }
         :MAX   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000000 {
             if (u15_19 s>= u10_14) goto <set_ra>;
             u20_24 = u10_14;
@@ -812,8 +848,8 @@ with : isa=0 {
         }
 
         # ZOL Optional
-        :MTLBI imm16s_rel is u20_24=0b00001 & imm16s_rel unimpl #{ LB = inst_start + imm16s_rel; }
-        :MTLEI imm16s_rel is u20_24=0b00010 & imm16s_rel unimpl #{ LE = inst_start + imm16s_rel; }
+        :MTLBI imm16s_rel is u20_24=0b00001 & imm16s_rel { LB = inst_start + imm16s_rel; }
+        :MTLEI imm16s_rel is u20_24=0b00010 & imm16s_rel { LE = inst_start + imm16s_rel; }
     }
     # JREG
     with : opc=0b100101 {
