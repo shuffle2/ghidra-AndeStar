@@ -861,9 +861,7 @@ with : isa=0 {
         :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel & inst_next_it {
             IFC_LP = inst_next_it;
             PSW.IFCON = 1;
-            goto imm16s_rel;
-            # HACK to prevent decompiler improperly creating CALL_TERMINATOR
-            goto inst_next_it;
+            call imm16s_rel;
         }
 
         # ZOL Optional
@@ -873,10 +871,10 @@ with : isa=0 {
     # JREG
     with : opc=0b100101 {
         # haven't seen this used, but it's in binutils
-        :IFRET is u20_24=0b00000 & u5_14=0b11 & subop=0b00000 & inst_next_it {
+        :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 & inst_next_it {
             if (!PSW.IFCON) goto inst_next_it;
             PSW.IFCON = 0;
-            goto [IFC_LP];
+            return [IFC_LP];
         }
     }
 }
@@ -1122,14 +1120,12 @@ with : isa_s=1 {
     :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
         IFC_LP = inst_next;
         PSW.IFCON = 1;
-        goto imm9s_rel;
-        # HACK to prevent decompiler improperly creating CALL_TERMINATOR
-        goto inst_next;
+        call imm9s_rel;
     }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
     :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
         if (!PSW.IFCON) goto inst_next;
         PSW.IFCON = 0;
-        goto [IFC_LP];
+        return [IFC_LP];
     }
 }
