@@ -289,6 +289,12 @@ define pcodeop lmw;
 define pcodeop smw;
 define pcodeop ex9it;
 
+# TODO since IFCON changes so much behavior, maybe should be treated as context?
+# but, we expect insns at same addr to be encountered with IFCON 0/1, not sure if that's acceptable.
+macro psw_ifcon_clear() {
+    PSW.IFCON = 0;
+}
+
 with : isa=0 {
     # ALU_1
     with : opc=0b100000 & u5_9i=0 {
@@ -411,47 +417,81 @@ with : isa=0 {
     imm16s_rel: rel is s0_15 [ rel = inst_start + (s0_15 << 1); ] { export *:4 rel; }
     imm24s_rel: rel is s0_23 [ rel = inst_start + (s0_23 << 1); ] { export *:4 rel; }
 
-    inst_next_it: addr is ITMode=0 [addr = inst_start + 4;] { export *:4 addr; }
+    # 32bit instructions need to reference PC+2 as next PC if being executed from EX9.IT
+    # TODO this doesn't actually work, atm
+    inst_next_it: addr is ITMode=0 [addr = inst_next;] { export *:4 addr; }
     inst_next_it: addr is ITMode=1 [addr = inst_start + 2;] { export *:4 addr; }
 
     # BR1
     with : opc=0b100110 {
-        :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel { if (u20_24 == u15_19) goto imm14s_rel; }
-        :BNE u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=1 & imm14s_rel { if (u20_24 != u15_19) goto imm14s_rel; }
+        :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel {
+            if (u20_24 != u15_19) goto <end>;
+                psw_ifcon_clear();
+                goto imm14s_rel;
+            <end>
+        }
+        :BNE u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=1 & imm14s_rel {
+            if (u20_24 == u15_19) goto <end>;
+                psw_ifcon_clear();
+                goto imm14s_rel;
+            <end>
+        }
     }
     # BR2
     with : opc=0b100111 {
-        :BEQZ u20_24, imm16s_rel is u20_24 & u16_19=0b0010 & imm16s_rel { if (u20_24 == 0) 	goto imm16s_rel; }
-        :BNEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0011 & imm16s_rel { if (u20_24 != 0) 	goto imm16s_rel; }
-        :BGEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0100 & imm16s_rel { if (u20_24 s>= 0) goto imm16s_rel; }
-        :BLTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0101 & imm16s_rel { if (u20_24 s< 0) 	goto imm16s_rel; }
-        :BGTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0110 & imm16s_rel { if (u20_24 s> 0) 	goto imm16s_rel; }
-        :BLEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0111 & imm16s_rel { if (u20_24 s<= 0) goto imm16s_rel; }
+        macro branch_if(cond, target) {
+            if (cond) goto <taken>;
+                goto <end>;
+            <taken>
+            psw_ifcon_clear();
+            goto target;
+            <end>
+        }
+        macro call_if(cond, target) {
+            if (cond) goto <taken>;
+                goto <end>;
+            <taken>
+            psw_ifcon_clear();
+            call target;
+            <end>
+        }
+        macro set_link_gpr(gpr, target) {
+            if (PSW.IFCON) goto <ifcon>;
+                gpr = target;
+                goto <fi>;
+            <ifcon>
+                gpr = IFC_LP;
+            <fi>
+        }
+        :BEQZ u20_24, imm16s_rel is u20_24 & u16_19=0b0010 & imm16s_rel { branch_if(u20_24 == 0, imm16s_rel); }
+        :BNEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0011 & imm16s_rel { branch_if(u20_24 != 0, imm16s_rel); }
+        :BGEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0100 & imm16s_rel { branch_if(u20_24 s>= 0, imm16s_rel); }
+        :BLTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0101 & imm16s_rel { branch_if(u20_24 s< 0, imm16s_rel); }
+        :BGTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0110 & imm16s_rel { branch_if(u20_24 s> 0, imm16s_rel); }
+        :BLEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0111 & imm16s_rel { branch_if(u20_24 s<= 0, imm16s_rel); }
         :BGEZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1100 & imm16s_rel & inst_next_it {
             local bcond = u20_24;
-            lp = inst_next_it;
-            if (!(bcond s>= 0)) goto <end>;
-            call imm16s_rel;
-            <end>
+            set_link_gpr(lp, inst_next_it);
+            call_if(bcond s>= 0, imm16s_rel);
         }
         :BLTZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1101 & imm16s_rel & inst_next_it {
             local bcond = u20_24;
-            lp = inst_next_it;
-            if (!(bcond s< 0)) goto <end>;
-            call imm16s_rel;
-            <end>
+            set_link_gpr(lp, inst_next_it);
+            call_if(bcond s< 0, imm16s_rel);
         }
     }
     # JI
     with : opc=0b100100 {
-        :J   imm24s_rel is u24_24=0 & imm24s_rel { goto imm24s_rel; }
+        :J   imm24s_rel is u24_24=0 & imm24s_rel { psw_ifcon_clear(); goto imm24s_rel; }
         :JAL imm24s_rel is u24_24=1 & imm24s_rel & inst_next_it & ITMode=0 {
-            lp = inst_next_it;
+            set_link_gpr(lp, inst_next_it);
+            psw_ifcon_clear();
             call imm24s_rel;
         }
         jal_dst_it: rel is s0_23 [ rel = (inst_start & 0xfe000000) | (s0_23 << 1); ] { export *:4 rel; }
         :JAL jal_dst_it is u24_24=1 & jal_dst_it & inst_next_it & ITMode=1 {
-            lp = inst_next_it;
+            set_link_gpr(lp, inst_next_it);
+            psw_ifcon_clear();
             # call pcodeop implicitly uses inst_next which generates improper code xref at +4
             call jal_dst_it;
         }
@@ -459,9 +499,11 @@ with : isa=0 {
     # JREG
     with : opc=0b100101 {
         :JR  u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=0 & subop=0b00000 {
+            psw_ifcon_clear();
             goto [u10_14];
         }
         :RET u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=1 & subop=0b00000 {
+            psw_ifcon_clear();
             return [u10_14];
         }
         :JR."[T|IT]OFF" u10_14 is u15_24=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
@@ -469,23 +511,36 @@ with : isa=0 {
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 0;
             #<do_branch>
+            psw_ifcon_clear();
             goto [u10_14];
         }
         :JRAL u20_24, u10_14 is u20_24    & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
             local jaddr:4 = u10_14;
             u20_24 = inst_next_it;
+            if (!PSW.IFCON) goto <fi>;
+                jaddr = IFC_LP;
+            <fi>
+            psw_ifcon_clear();
             goto [jaddr];
         }
         # special case for call
         :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
             local jaddr:4 = u10_14;
             lp = inst_next_it;
+            if (!PSW.IFCON) goto <fi>;
+                jaddr = IFC_LP;
+            <fi>
+            psw_ifcon_clear();
             call [jaddr];
         }
         # special case for return (from leaf function)
         :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u10_14i=30 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
             local jaddr:4 = u10_14;
             lp = inst_next_it;
+            if (!PSW.IFCON) goto <fi>;
+                jaddr = IFC_LP;
+            <fi>
+            psw_ifcon_clear();
             return [jaddr];
         }
         :JRAL."[T|IT]ON" u20_24, u10_14 is u20_24     & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & inst_next_it {
@@ -495,6 +550,10 @@ with : isa=0 {
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 1;
             #<do_branch>
+            if (!PSW.IFCON) goto <fi>;
+                jaddr = IFC_LP;
+            <fi>
+            psw_ifcon_clear();
             goto [jaddr];
         }
         # special case for call
@@ -505,6 +564,10 @@ with : isa=0 {
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 1;
             #<do_branch>
+            if (!PSW.IFCON) goto <fi>;
+                jaddr = IFC_LP;
+            <fi>
+            psw_ifcon_clear();
             call [jaddr];
         }
     }
@@ -824,8 +887,8 @@ with : isa=0 {
     with : opc=0b101101 {
         imm8s_rel: rel is s0_7 [ rel = inst_start + (s0_7 << 1); ] { export *:4 rel; }
         # TODO sext(s8_18)?
-        :BEQC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=0 { if u20_24 == s8_18 goto imm8s_rel; }
-        :BNEC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=1 { if u20_24 != s8_18 goto imm8s_rel; }
+        :BEQC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=0 { branch_if(u20_24 == s8_18, imm8s_rel); }
+        :BNEC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=1 { branch_if(u20_24 != s8_18, imm8s_rel); }
     }
     # BITCI
     with : opc=0b110011 {
@@ -835,21 +898,30 @@ with : isa=0 {
     # JREG
     with : opc=0b100101 & u5_9=0 {
         :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 & inst_next_it {
-            if (!(u10_14 != 0)) goto <end>;
-            u20_24 = inst_next_it;
-            goto [u10_14];
+            local jaddr:4 = u10_14;
+
+            set_link_gpr(u20_24, inst_next_it);
+            psw_ifcon_clear();
+
+            if (!(jaddr != 0)) goto <end>;
+                goto [jaddr];
             <end>
         }
         # special case for Rt=LP
         :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 & inst_next_it {
-            if (!(u10_14 != 0)) goto <end>;
-            lp = inst_next_it;
-            call [u10_14];
+            local jaddr:4 = u10_14;
+
+            set_link_gpr(lp, inst_next_it);
+            psw_ifcon_clear();
+
+            if (!(jaddr != 0)) goto <end>;
+                call [jaddr];
             <end>
         }
         :JRNEZ      u10_14          is u20_24=0  & u10_14 & subop=0b00010 {
             if (!(u10_14 != 0)) goto <end>;
-            goto [u10_14];
+                psw_ifcon_clear();
+                goto [u10_14];
             <end>
         }
     }
@@ -859,8 +931,10 @@ with : isa=0 {
     # BR2 SOP0
     with : opc=0b100111 & u16_19=0b0000 {
         :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel & inst_next_it {
-            IFC_LP = inst_next_it;
-            PSW.IFCON = 1;
+            if (PSW.IFCON) goto <ifcon>;
+                IFC_LP = inst_next_it;
+                PSW.IFCON = 1;
+            <ifcon>
             call imm16s_rel;
         }
 
@@ -871,10 +945,11 @@ with : isa=0 {
     # JREG
     with : opc=0b100101 {
         # haven't seen this used, but it's in binutils
-        :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 & inst_next_it {
-            if (!PSW.IFCON) goto inst_next_it;
-            PSW.IFCON = 0;
+        :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 {
+            if (!PSW.IFCON) goto <end>;
+            psw_ifcon_clear();
             return [IFC_LP];
+            <end>
         }
     }
 }
@@ -916,20 +991,20 @@ with : isa_s=1 {
     :SWI450 R4_5_8, addr4 is op9_14=0b011011 & R4_5_8 & addr4 { *:4 addr4 = R4_5_8:4; }
 
     imm8s_rel: rel is imm8s [ rel = inst_start + (imm8s << 1); ] { export *:4 rel; }
-    :BEQZ38 R3_8_10, imm8s_rel is op11_14=0b1000 & R3_8_10 & imm8s_rel { if (R3_8_10 == 0)  goto imm8s_rel; }
-    :BNEZ38 R3_8_10, imm8s_rel is op11_14=0b1001 & R3_8_10 & imm8s_rel { if (R3_8_10 != 0)  goto imm8s_rel; }
-    # documented as if R3_8_10 cannot be R5(a5), but that is currently ignored
-    :BEQS38 R3_8_10, imm8s_rel is op11_14=0b1010 & R3_8_10 & imm8s_rel { if (R3_8_10 == a5) goto imm8s_rel; }
-    :BNES38 R3_8_10, imm8s_rel is op11_14=0b1011 & R3_8_10 & imm8s_rel { if (R3_8_10 != a5) goto imm8s_rel; }
-    :BEQZS8 imm8s_rel is op8_14=0b1101000 & imm8s_rel { if (ta == 0) goto imm8s_rel; }
-    :BNEZS8 imm8s_rel is op8_14=0b1101001 & imm8s_rel { if (ta != 0) goto imm8s_rel; }
+    :BEQZ38 R3_8_10, imm8s_rel is op11_14=0b1000 & R3_8_10 & imm8s_rel { branch_if(R3_8_10 == 0, imm8s_rel); }
+    :BNEZ38 R3_8_10, imm8s_rel is op11_14=0b1001 & R3_8_10 & imm8s_rel { branch_if(R3_8_10 != 0, imm8s_rel); }
+    # if R3_8_10 == R5(a5), it's J8
+    :BEQS38 R3_8_10, imm8s_rel is op11_14=0b1010 & R3_8_10 & imm8s_rel { branch_if(R3_8_10 == a5, imm8s_rel); }
+    :BNES38 R3_8_10, imm8s_rel is op11_14=0b1011 & R3_8_10 & imm8s_rel { branch_if(R3_8_10 != a5, imm8s_rel); }
+    :BEQZS8 imm8s_rel is op8_14=0b1101000 & imm8s_rel { branch_if(ta == 0, imm8s_rel); }
+    :BNEZS8 imm8s_rel is op8_14=0b1101001 & imm8s_rel { branch_if(ta != 0, imm8s_rel); }
 
     # V3 ISA modifies BREAK16 such that imm4u is zero. nonzero imm4u encodes EX9.IT instead.
     :BREAK16 imm5u is op9_14=0b110101 & imm4u=0 & imm5u { Exception_Breakpoint(imm5u:1); }
 
-    :J8 imm8s_rel is op8_14=0b1010101 & imm8s_rel { goto imm8s_rel; }
-    :JR5   R5_0_4 is op5_14=0b1011101000 & R5_0_4 { goto [R5_0_4]; }
-    :JRAL5 R5_0_4 is op5_14=0b1011101001 & R5_0_4 { lp = inst_next; call [R5_0_4]; }
+    :J8 imm8s_rel is op8_14=0b1010101 & imm8s_rel { psw_ifcon_clear(); goto imm8s_rel; }
+    :JR5   R5_0_4 is op5_14=0b1011101000 & R5_0_4 { psw_ifcon_clear(); goto [R5_0_4]; }
+    :JRAL5 R5_0_4 is op5_14=0b1011101001 & R5_0_4 { set_link_gpr(lp, inst_next); psw_ifcon_clear(); call [R5_0_4]; }
 
     :RET5 R5_0_4 is op5_14=0b1011101100 & R5_0_4 { return [R5_0_4]; }
 
@@ -1084,6 +1159,7 @@ with : isa_s=1 {
         pop_reg(fp);
         pop_reg(gp);
         pop_reg(lp);
+        psw_ifcon_clear();
         return [lp];
     }
     :POP25  "{s0,fp,gp,lp}", imm8u_5    is op7_14=0b11111001 & R2_5_6=0b00 & imm8u_5 {
@@ -1118,14 +1194,16 @@ with : isa_s=1 {
     # TODO flow analysis gets screwed up by IFCALL/IFRET
     imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
     :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
-        IFC_LP = inst_next;
-        PSW.IFCON = 1;
+        if (PSW.IFCON) goto <ifcon>;
+            IFC_LP = inst_next;
+            PSW.IFCON = 1;
+        <ifcon>
         call imm9s_rel;
     }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
     :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
         if (!PSW.IFCON) goto inst_next;
-        PSW.IFCON = 0;
+        psw_ifcon_clear();
         return [IFC_LP];
     }
 }
