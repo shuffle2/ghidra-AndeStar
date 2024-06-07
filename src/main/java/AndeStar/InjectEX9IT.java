@@ -16,7 +16,6 @@ import ghidra.app.util.PseudoDisassembler;
 import ghidra.app.util.PseudoInstruction;
 
 public class InjectEX9IT extends InjectPayloadCallother {
-	private PcodeOp[] EMPTY_PCODEOP = new PcodeOp[0];
 	private int INSTRUCTION_TABLE_ENTRY_LENGTH = 4;
 	private AddressSpace defaultSpace;
 	private CodeUnitFormat codeUnitFormat;
@@ -50,7 +49,7 @@ public class InjectEX9IT extends InjectPayloadCallother {
 
 		BigInteger ITB = program.getProgramContext().getValue(itbReg, ex9itAddr, false);
 		if (ITB == null) {
-			return EMPTY_PCODEOP;
+			return null;
 		}
 		long memOffset = (ITB.longValue() & ~0b11) + itOffset;
 
@@ -64,34 +63,37 @@ public class InjectEX9IT extends InjectPayloadCallother {
 		PseudoInstruction insn = disasmAt(program, defaultSpace.getAddress(0), fetchAddr);
 		// Could be bad ITB
 		if (insn == null) {
-			return EMPTY_PCODEOP;
+			return null;
 		}
 
 		String mnem = insn.getMnemonicString();
-		if (mnem == "EX9.IT") {
-			// hw would generate Reserved Instruction Exception
-			return EMPTY_PCODEOP;
+		if (mnem != null) {
+			if (mnem.equals("EX9.IT")) {
+				// hw would generate Reserved Instruction Exception
+				return null;
+			}
+
+			// 32bit insns which use inst_next (PC + 4) need to be fixed up to use PC + 2,
+			// since EX9.IT is 16bit.
+			// if J : PC = concat(PC[31,25], (Inst[23,0] << 1)) // not signed?
+			// if JAL : R30 = PC + 2; PC = concat(PC[31,25], (Inst[23,0] << 1))
+			// JRAL, JRAL.xTON, JRALNEZ, BGEZAL, BLTZAL: RT = PC + 2
+			// TODO This is still not fixed (the ITMode=1 sleigh code is never reached)
+
+			// Set comment if there's a valid insn referenced.
+			// TODO append the referenced instruction in a more disassembler-aware way
+			Listing listing = program.getListing();
+			if (listing.getComment(CodeUnit.EOL_COMMENT, ex9itAddr) == null) {
+				// getRepresentationString is also slow
+				String ex9itComment = codeUnitFormat.getRepresentationString(insn);
+				program.withTransaction("set EX9.IT comment", () -> {
+					listing.setComment(ex9itAddr, CodeUnit.EOL_COMMENT,
+							String.format("%s {%s}", fetchAddr.toString(), ex9itComment));
+				});
+			}
 		}
 
-		// 32bit insns which use inst_next (PC + 4) need to be fixed up to use PC + 2,
-		// since EX9.IT is 16bit.
-		// if J : PC = concat(PC[31,25], (Inst[23,0] << 1)) // not signed?
-		// if JAL : R30 = PC + 2; PC = concat(PC[31,25], (Inst[23,0] << 1))
-		// JRAL, JRAL.xTON, JRALNEZ, BGEZAL, BLTZAL: RT = PC + 2
-		// TODO This is still not fixed (the ITMode=1 sleigh code is never reached)
-
-		// Set comment if there's a valid insn referenced.
-		// TODO append the referenced instruction in a more disassembler-aware way
-		Listing listing = program.getListing();
-		if (listing.getComment(CodeUnit.EOL_COMMENT, ex9itAddr) == null) {
-			// getRepresentationString is also slow
-			String ex9itComment = codeUnitFormat.getRepresentationString(insn);
-			program.withTransaction("set EX9.IT comment", () -> {
-				listing.setComment(ex9itAddr, CodeUnit.EOL_COMMENT,
-						String.format("%s {%s}", fetchAddr.toString(), ex9itComment));
-			});
-		}
-
+		// NOTE SymbolicPropogator must be patched to allow STORE pcode ops
 		return insn.getPcode();
 	}
 
