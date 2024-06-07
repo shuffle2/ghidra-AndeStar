@@ -984,7 +984,7 @@ with : isa_s=1 {
     :SBI333    R3_6_8, addr30   is op9_14=0b010111 & R3_6_8 &          addr30   { *:1 addr30   = R3_6_8:1; }
     :SHI333    R3_6_8, addr31   is op9_14=0b010110 & R3_6_8 &          addr31   { *:2 addr31   = R3_6_8:2; }
     :SWI333    R3_6_8, addr32   is op9_14=0b010100 & R3_6_8 &          addr32   { *:4 addr32   = R3_6_8:4; }
-    :SWI333.bi R3_6_8, addr32bi is op9_14=0b010101 & R3_6_8 & R3_3_5 & addr32bi { *:4 addr32bi = R3_6_8:4; }
+    :SWI333.bi R3_6_8, addr32bi is op9_14=0b010101 & R3_6_8 & R3_3_5 & addr32bi { *:4 addr32bi = R3_6_8:4; R3_3_5 = bi_addr; }
 
     addr4: [R5_0_4] is R5_0_4 { export R5_0_4; }
     :LWI450 R4_5_8, addr4 is op9_14=0b011010 & R4_5_8 & addr4 { R4_5_8 = *:4 addr4; }
