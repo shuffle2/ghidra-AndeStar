@@ -97,11 +97,7 @@ define bitrange
 #@define PSW.PNP     "PSW[22,1]"
 
 # ghidra state
-define register offset=0x110 size=4 [bi_addr contextreg];
-
-define context contextreg
-    ITMode = (0,0) noflow
-;
+define register offset=0x110 size=4 [bi_addr];
 
 # valid if isa=0
 define token instr32(32) endian=big
@@ -417,11 +413,6 @@ with : isa=0 {
     imm16s_rel: rel is s0_15 [ rel = inst_start + (s0_15 << 1); ] { export *:4 rel; }
     imm24s_rel: rel is s0_23 [ rel = inst_start + (s0_23 << 1); ] { export *:4 rel; }
 
-    # 32bit instructions need to reference PC+2 as next PC if being executed from EX9.IT
-    # TODO this doesn't actually work, atm
-    inst_next_it: addr is ITMode=0 [addr = inst_next;] { export *:4 addr; }
-    inst_next_it: addr is ITMode=1 [addr = inst_start + 2;] { export *:4 addr; }
-
     # BR1
     with : opc=0b100110 {
         :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel {
@@ -469,31 +460,24 @@ with : isa=0 {
         :BLTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0101 & imm16s_rel { branch_if(u20_24 s< 0, imm16s_rel); }
         :BGTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0110 & imm16s_rel { branch_if(u20_24 s> 0, imm16s_rel); }
         :BLEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0111 & imm16s_rel { branch_if(u20_24 s<= 0, imm16s_rel); }
-        :BGEZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1100 & imm16s_rel & inst_next_it {
+        :BGEZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1100 & imm16s_rel {
             local bcond = u20_24;
-            set_link_gpr(lp, inst_next_it);
+            set_link_gpr(lp, inst_next);
             call_if(bcond s>= 0, imm16s_rel);
         }
-        :BLTZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1101 & imm16s_rel & inst_next_it {
+        :BLTZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1101 & imm16s_rel {
             local bcond = u20_24;
-            set_link_gpr(lp, inst_next_it);
+            set_link_gpr(lp, inst_next);
             call_if(bcond s< 0, imm16s_rel);
         }
     }
     # JI
     with : opc=0b100100 {
         :J   imm24s_rel is u24_24=0 & imm24s_rel { psw_ifcon_clear(); goto imm24s_rel; }
-        :JAL imm24s_rel is u24_24=1 & imm24s_rel & inst_next_it & ITMode=0 {
-            set_link_gpr(lp, inst_next_it);
+        :JAL imm24s_rel is u24_24=1 & imm24s_rel {
+            set_link_gpr(lp, inst_next);
             psw_ifcon_clear();
             call imm24s_rel;
-        }
-        jal_dst_it: rel is s0_23 [ rel = (inst_start & 0xfe000000) | (s0_23 << 1); ] { export *:4 rel; }
-        :JAL jal_dst_it is u24_24=1 & jal_dst_it & inst_next_it & ITMode=1 {
-            set_link_gpr(lp, inst_next_it);
-            psw_ifcon_clear();
-            # call pcodeop implicitly uses inst_next which generates improper code xref at +4
-            call jal_dst_it;
         }
     }
     # JREG
@@ -514,59 +498,45 @@ with : isa=0 {
             psw_ifcon_clear();
             goto [u10_14];
         }
-        :JRAL u20_24, u10_14 is u20_24    & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
+        :JRAL u20_24, u10_14 is u20_24    & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 {
             local jaddr:4 = u10_14;
-            u20_24 = inst_next_it;
-            if (!PSW.IFCON) goto <fi>;
-                jaddr = IFC_LP;
-            <fi>
+            set_link_gpr(u20_24, inst_next);
             psw_ifcon_clear();
             goto [jaddr];
         }
-        # special case for call
-        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
+        # special case for call (Rt=LP)
+        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 {
             local jaddr:4 = u10_14;
-            lp = inst_next_it;
-            if (!PSW.IFCON) goto <fi>;
-                jaddr = IFC_LP;
-            <fi>
+            set_link_gpr(lp, inst_next);
             psw_ifcon_clear();
             call [jaddr];
         }
-        # special case for return (from leaf function)
-        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u10_14i=30 & u8_9=0 & u5_7=0 & subop=0b00001 & inst_next_it {
+        # special case for return (from leaf function: Rt=LP, Rb=LP)
+        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u10_14i=30 & u8_9=0 & u5_7=0 & subop=0b00001 {
             local jaddr:4 = u10_14;
-            lp = inst_next_it;
-            if (!PSW.IFCON) goto <fi>;
-                jaddr = IFC_LP;
-            <fi>
+            set_link_gpr(lp, inst_next);
             psw_ifcon_clear();
+            # TODO ensure correct in IFC case (gdb has probably incorrect behavior of Rt=IFC_LP *after* Rb is read for jaddr, which we replicate)
             return [jaddr];
         }
-        :JRAL."[T|IT]ON" u20_24, u10_14 is u20_24     & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & inst_next_it {
-            local jaddr:4 = u10_14;
-            u20_24 = inst_next_it;
+        :JRAL."[T|IT]ON" u20_24, u10_14 is u20_24     & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
             #PSW.IT = 1;
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 1;
             #<do_branch>
-            if (!PSW.IFCON) goto <fi>;
-                jaddr = IFC_LP;
-            <fi>
+            local jaddr:4 = u10_14;
+            set_link_gpr(u20_24, inst_next);
             psw_ifcon_clear();
             goto [jaddr];
         }
         # special case for call
-        :JRAL."[T|IT]ON" u10_14         is u20_24i=30 & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & inst_next_it {
-            local jaddr:4 = u10_14;
-            lp = inst_next_it;
+        :JRAL."[T|IT]ON" u10_14         is u20_24i=30 & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
             #PSW.IT = 1;
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 1;
             #<do_branch>
-            if (!PSW.IFCON) goto <fi>;
-                jaddr = IFC_LP;
-            <fi>
+            local jaddr:4 = u10_14;
+            set_link_gpr(lp, inst_next);
             psw_ifcon_clear();
             call [jaddr];
         }
@@ -897,10 +867,10 @@ with : isa=0 {
     }
     # JREG
     with : opc=0b100101 & u5_9=0 {
-        :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 & inst_next_it {
+        :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 {
             local jaddr:4 = u10_14;
 
-            set_link_gpr(u20_24, inst_next_it);
+            set_link_gpr(u20_24, inst_next);
             psw_ifcon_clear();
 
             if (!(jaddr != 0)) goto <end>;
@@ -908,10 +878,10 @@ with : isa=0 {
             <end>
         }
         # special case for Rt=LP
-        :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 & inst_next_it {
+        :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 {
             local jaddr:4 = u10_14;
 
-            set_link_gpr(lp, inst_next_it);
+            set_link_gpr(lp, inst_next);
             psw_ifcon_clear();
 
             if (!(jaddr != 0)) goto <end>;
@@ -930,9 +900,9 @@ with : isa=0 {
 
     # BR2 SOP0
     with : opc=0b100111 & u16_19=0b0000 {
-        :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel & inst_next_it {
+        :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel {
             if (PSW.IFCON) goto <ifcon>;
-                IFC_LP = inst_next_it;
+                IFC_LP = inst_next;
                 PSW.IFCON = 1;
             <ifcon>
             call imm16s_rel;
@@ -1186,8 +1156,8 @@ with : isa_s=1 {
 ########## EX9IT Extension
 
     # indirect instruction execution from Instruction_Table
-    :EX9.IT imm9u is op9_14=0b110101 & imm9u     [ ITMode=1; globalset(inst_start, ITMode); ] { ex9it(imm9u:2); }
-    :EX9.IT imm5u is op5_14=0b1011101010 & imm5u [ ITMode=1; globalset(inst_start, ITMode); ] { ex9it(imm5u:1); }
+    :EX9.IT imm9u is op9_14=0b110101 & imm9u     { ex9it(imm9u:2); }
+    :EX9.IT imm5u is op5_14=0b1011101010 & imm5u { ex9it(imm5u:1); }
 
 ########## DSP ISA Extension
 
