@@ -97,7 +97,7 @@ define bitrange
 #@define PSW.PNP     "PSW[22,1]"
 
 # ghidra state
-define register offset=0x110 size=4 [bi_addr];
+define register offset=0x110 size=4 [bi_addr IFC_ON];
 
 # valid if isa=0
 define token instr32(32) endian=big
@@ -285,10 +285,10 @@ define pcodeop lmw;
 define pcodeop smw;
 define pcodeop ex9it;
 
-# TODO since IFCON changes so much behavior, maybe should be treated as context?
-# but, we expect insns at same addr to be encountered with IFCON 0/1, not sure if that's acceptable.
+# for now, IFC_ON is dedicated register to make pcode more simple.
+# wrong behavior, but only matters for things exposing r/w access to PSW directly.
 macro psw_ifcon_clear() {
-    PSW.IFCON = 0;
+    IFC_ON = 0;
 }
 
 with : isa=0 {
@@ -446,8 +446,10 @@ with : isa=0 {
             call target;
             <end>
         }
+        # NOTE if decompiler only sees IFC_ON as single value on all flows to this pcode block, it will warn about unreachable code elimination
+        # not sure there's much to do about it
         macro set_link_gpr(gpr, target) {
-            if (PSW.IFCON) goto <ifcon>;
+            if (IFC_ON == 1) goto <ifcon>;
                 gpr = target;
                 goto <fi>;
             <ifcon>
@@ -901,9 +903,9 @@ with : isa=0 {
     # BR2 SOP0
     with : opc=0b100111 & u16_19=0b0000 {
         :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel {
-            if (PSW.IFCON) goto <ifcon>;
+            if (IFC_ON == 1) goto <ifcon>;
                 IFC_LP = inst_next;
-                PSW.IFCON = 1;
+                IFC_ON = 1;
             <ifcon>
             call imm16s_rel;
         }
@@ -916,7 +918,7 @@ with : isa=0 {
     with : opc=0b100101 {
         # haven't seen this used, but it's in binutils
         :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 {
-            if (!PSW.IFCON) goto <end>;
+            if (IFC_ON == 0) goto <end>;
             psw_ifcon_clear();
             return [IFC_LP];
             <end>
@@ -1164,15 +1166,15 @@ with : isa_s=1 {
     # TODO flow analysis gets screwed up by IFCALL/IFRET
     imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
     :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
-        if (PSW.IFCON) goto <ifcon>;
+        if (IFC_ON == 1) goto <ifcon>;
             IFC_LP = inst_next;
-            PSW.IFCON = 1;
+            IFC_ON = 1;
         <ifcon>
         call imm9s_rel;
     }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
     :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
-        if (!PSW.IFCON) goto inst_next;
+        if (IFC_ON == 0) goto inst_next;
         psw_ifcon_clear();
         return [IFC_LP];
     }
