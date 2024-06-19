@@ -1,4 +1,4 @@
-package AndeStar;
+package ghidra.app.util.pcodeInject;
 
 import java.util.ArrayList;
 
@@ -7,7 +7,6 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.lang.InjectContext;
 import ghidra.program.model.lang.InjectPayloadCallother;
-import ghidra.program.model.lang.InjectPayloadSleigh;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.pcode.PcodeOp;
@@ -117,16 +116,19 @@ public class InjectLSMW extends InjectPayloadCallother {
 		// BUG: the writeback does not flow to the successive instructions for some
 		// reason. Because the inject type is CALLOTHERFIXUP_TYPE?
 		/*
-		if (Modify != 0) {
-			if (IncDec == 0) {
-				// Ra += totalSize;
-				opList.add(new PcodeOp(opAddress, seqnum++, PcodeOp.INT_ADD, new Varnode[] { Ra, numBytes }, Ra));
-			} else {
-				// Ra -= totalSize;
-				opList.add(new PcodeOp(opAddress, seqnum++, PcodeOp.INT_SUB, new Varnode[] { Ra, numBytes }, Ra));
-			}
-		}
-		// */
+		 * if (Modify != 0) {
+		 * if (IncDec == 0) {
+		 * // Ra += totalSize;
+		 * opList.add(new PcodeOp(opAddress, seqnum++, PcodeOp.INT_ADD, new Varnode[] {
+		 * Ra, numBytes }, Ra));
+		 * } else {
+		 * // Ra -= totalSize;
+		 * opList.add(new PcodeOp(opAddress, seqnum++, PcodeOp.INT_SUB, new Varnode[] {
+		 * Ra, numBytes }, Ra));
+		 * }
+		 * }
+		 * //
+		 */
 
 		PcodeOp[] res = new PcodeOp[opList.size()];
 		opList.toArray(res);

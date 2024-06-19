@@ -1,4 +1,4 @@
-package AndeStar;
+package ghidra.app.util.pcodeInject;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -25,7 +25,7 @@ public class PcodeInjectLibraryAndeStar extends PcodeInjectLibrary {
 		uniqueBase += 0x100;
 		implementedOps.put(SMW, new InjectLSMW(SOURCENAME, l, uniqueBase, true));
 		uniqueBase += 0x100;
-		implementedOps.put(EX9IT, new InjectEX9IT(SOURCENAME, l));
+		implementedOps.put(EX9IT, new InjectEX9IT(SOURCENAME));
 		uniqueBase += 0x100;
 	}
 

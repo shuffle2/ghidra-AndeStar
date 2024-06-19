@@ -2,7 +2,7 @@
 
 <processor_spec>
     <properties>
-        <property key="pcodeInjectLibraryClass" value="AndeStar.PcodeInjectLibraryAndeStar"/>
+        <property key="pcodeInjectLibraryClass" value="ghidra.app.util.pcodeInject.PcodeInjectLibraryAndeStar"/>
     </properties>
     <programcounter register="PC"/>
 </processor_spec>
