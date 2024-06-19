@@ -74,6 +74,6 @@ public class AndeStarEX9ITAnalyzer extends AbstractAnalyzer {
             }
         }
 
-        return false;
+        return true;
     }
 }
