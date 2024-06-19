@@ -76,6 +76,11 @@
             </killedbycall>
         </prototype>
     </default_proto>
+    <context_data>
+        <tracked_set space="ram">
+            <set name="IFC_ON" val="0" description="Assume IFC_ON=0 on function entry"/>
+        </tracked_set>
+    </context_data>
     <callotherfixup targetop="lmw">
         <pcode dynamic="true">
             <input name="Rb"/>
