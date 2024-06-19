@@ -305,6 +305,21 @@ macro call_if(cond, target) {
     <end>
 }
 
+macro ifcall(target) {
+    if (IFC_ON == 1) goto <ifcon>;
+        IFC_LP = inst_next;
+    <ifcon>
+    IFC_ON = 1;
+    call target;
+}
+
+macro ifret() {
+    if (IFC_ON == 0) goto <end>;
+        psw_ifcon_clear();
+        return [IFC_LP];
+    <end>
+}
+
 # NOTE if decompiler only sees IFC_ON as single value on all flows to this pcode block, it will warn about unreachable code elimination
 # not sure there's much to do about it
 macro set_link_gpr(gpr, target) {
@@ -605,6 +620,7 @@ with : isa=0 {
         # if zero-sized range, enable4 should be nonzero
         # i lost patience trying to do this in sleigh so it's implemented via CALLOTHER pcode injection
         # TODO maybe use autogen idea like https://github.com/xyzz/ghidra-rl78/blob/master/data/languages/rl78.slaspec.in#L149 instead of pcode injection...
+        # see https://github.com/NationalSecurityAgency/ghidra/pull/1778/files
         mw_wb_disp: squash reg_size disp is u10_14i & u20_24i & lmw_fp & lmw_gp & lmw_lp & lmw_sp & lmw3 [
             # squash = (u20_24i == 31) ? 0 : 1
             squash = 1 ^ (((u20_24i >> 4) & 1) & ((u20_24i >> 3) & 1) & ((u20_24i >> 2) & 1) & ((u20_24i >> 1) & 1) & (u20_24i & 1));
@@ -896,11 +912,7 @@ with : isa=0 {
     # BR2 SOP0
     with : opc=0b100111 & u16_19=0b0000 {
         :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel {
-            if (IFC_ON == 1) goto <ifcon>;
-                IFC_LP = inst_next;
-                IFC_ON = 1;
-            <ifcon>
-            call imm16s_rel;
+            ifcall(imm16s_rel);
         }
 
         # ZOL Optional
@@ -911,10 +923,7 @@ with : isa=0 {
     with : opc=0b100101 {
         # haven't seen this used, but it's in binutils
         :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 {
-            if (IFC_ON == 0) goto <end>;
-            psw_ifcon_clear();
-            return [IFC_LP];
-            <end>
+            ifret();
         }
     }
 }
@@ -1159,16 +1168,10 @@ with : isa_s=1 {
     # TODO flow analysis gets screwed up by IFCALL/IFRET
     imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
     :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
-        if (IFC_ON == 1) goto <ifcon>;
-            IFC_LP = inst_next;
-            IFC_ON = 1;
-        <ifcon>
-        call imm9s_rel;
+        ifcall(imm9s_rel);
     }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
     :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
-        if (IFC_ON == 0) goto inst_next;
-        psw_ifcon_clear();
-        return [IFC_LP];
+        ifret();
     }
 }
