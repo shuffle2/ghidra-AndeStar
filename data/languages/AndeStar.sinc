@@ -291,6 +291,31 @@ macro psw_ifcon_clear() {
     IFC_ON = 0;
 }
 
+macro branch_if(cond, target) {
+    if (!cond) goto <end>;
+        psw_ifcon_clear();
+        goto target;
+    <end>
+}
+
+macro call_if(cond, target) {
+    if (!cond) goto <end>;
+        psw_ifcon_clear();
+        call target;
+    <end>
+}
+
+# NOTE if decompiler only sees IFC_ON as single value on all flows to this pcode block, it will warn about unreachable code elimination
+# not sure there's much to do about it
+macro set_link_gpr(gpr, target) {
+    if (IFC_ON == 1) goto <ifcon>;
+        gpr = target;
+        goto <fi>;
+    <ifcon>
+        gpr = IFC_LP;
+    <fi>
+}
+
 with : isa=0 {
     # ALU_1
     with : opc=0b100000 & u5_9i=0 {
@@ -416,46 +441,14 @@ with : isa=0 {
     # BR1
     with : opc=0b100110 {
         :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel {
-            if (u20_24 != u15_19) goto <end>;
-                psw_ifcon_clear();
-                goto imm14s_rel;
-            <end>
+            branch_if(u20_24 == u15_19, imm14s_rel);
         }
         :BNE u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=1 & imm14s_rel {
-            if (u20_24 == u15_19) goto <end>;
-                psw_ifcon_clear();
-                goto imm14s_rel;
-            <end>
+            branch_if(u20_24 != u15_19, imm14s_rel);
         }
     }
     # BR2
     with : opc=0b100111 {
-        macro branch_if(cond, target) {
-            if (cond) goto <taken>;
-                goto <end>;
-            <taken>
-            psw_ifcon_clear();
-            goto target;
-            <end>
-        }
-        macro call_if(cond, target) {
-            if (cond) goto <taken>;
-                goto <end>;
-            <taken>
-            psw_ifcon_clear();
-            call target;
-            <end>
-        }
-        # NOTE if decompiler only sees IFC_ON as single value on all flows to this pcode block, it will warn about unreachable code elimination
-        # not sure there's much to do about it
-        macro set_link_gpr(gpr, target) {
-            if (IFC_ON == 1) goto <ifcon>;
-                gpr = target;
-                goto <fi>;
-            <ifcon>
-                gpr = IFC_LP;
-            <fi>
-        }
         :BEQZ u20_24, imm16s_rel is u20_24 & u16_19=0b0010 & imm16s_rel { branch_if(u20_24 == 0, imm16s_rel); }
         :BNEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0011 & imm16s_rel { branch_if(u20_24 != 0, imm16s_rel); }
         :BGEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0100 & imm16s_rel { branch_if(u20_24 s>= 0, imm16s_rel); }
