@@ -294,17 +294,15 @@ macro psw_ifcon_clear() {
 }
 
 macro branch_if(cond, target) {
-    if (!cond) goto <end>;
-        psw_ifcon_clear();
-        goto target;
-    <end>
+    if (!cond) goto inst_next;
+    psw_ifcon_clear();
+    goto target;
 }
 
 macro call_if(cond, target) {
-    if (!cond) goto <end>;
-        psw_ifcon_clear();
-        call target;
-    <end>
+    if (!cond) goto inst_next;
+    psw_ifcon_clear();
+    call target;
 }
 
 macro ifcall(target) {
@@ -316,10 +314,9 @@ macro ifcall(target) {
 }
 
 macro ifret() {
-    if (IFC_ON == 0) goto <end>;
-        psw_ifcon_clear();
-        return [IFC_LP];
-    <end>
+    if (IFC_ON == 0) goto inst_next;
+    psw_ifcon_clear();
+    return [IFC_LP];
 }
 
 # NOTE if decompiler only sees IFC_ON as single value on all flows to this pcode block, it will warn about unreachable code elimination
@@ -350,14 +347,12 @@ with : isa=0 {
             u20_24 = (u15_19 >> ra) | (u15_19 << (32 - ra));
         }
         :CMOVN u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11011 {
-            if (!(u10_14 != 0)) goto <end>;
+            if (!(u10_14 != 0)) goto inst_next;
             u20_24 = u15_19;
-            <end>
         }
         :CMOVZ u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b11010 {
-            if (!(u10_14 == 0)) goto <end>;
+            if (!(u10_14 == 0)) goto inst_next;
             u20_24 = u15_19;
-            <end>
         }
         :SEB u20_24, u15_19 is u20_24 & u15_19 & u5_14=0 & subop=0b10000 { u20_24 = sext(u15_19:1); }
         :SEH u20_24, u15_19 is u20_24 & u15_19 & u5_14=0 & subop=0b10001 { u20_24 = sext(u15_19:2); }
@@ -561,14 +556,12 @@ with : isa=0 {
         :SYSCALL u5_19 is u20_24=0 & u5_19 & subop=0b01011 { Exception_System_Call(u5_19:2); }
         :TRAP    u5_19 is u20_24=0 & u5_19 & subop=0b00101 { Exception_Trap(u5_19:2); }
         :TEQZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00110 {
-            if (!(u20_24 == 0)) goto <end>;
+            if (!(u20_24 == 0)) goto inst_next;
             Exception_Trap(u5_19:2);
-            <end>
         }
         :TNEZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00111 {
-            if (!(u20_24 != 0)) goto <end>;
+            if (!(u20_24 != 0)) goto inst_next;
             Exception_Trap(u5_19:2);
-            <end>
         }
 
         # covers CCTL forms from V3 as well
@@ -701,13 +694,12 @@ with : isa=0 {
             if (ra s>= 0) goto <set_val>;
             if (ra == 0x80000000) goto <set_max>;
             u20_24 = -ra;
-            goto <end>;
+            goto inst_next;
             <set_val>
             u20_24 = ra;
-            goto <end>;
+            goto inst_next;
             <set_max>
             u20_24 = 0x7fffffff;
-            <end>
         }
         :AVE   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000010 { u20_24 = (u15_19 + u10_14) s>> 2; }
         :BCLR  u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b001001 { u20_24 = u15_19 & ~(1 << u10_14i); }
@@ -721,13 +713,12 @@ with : isa=0 {
             if (ra s> max) goto <set_max>;
             if (ra s< min) goto <set_zero>;
             u20_24 = ra;
-            goto <end>;
+            goto inst_next;
             <set_max>
             u20_24 = max;
-            goto <end>;
+            goto inst_next;
             <set_zero>
             u20_24 = 0;
-            <end>
         }
         :CLIPS u20_24, u15_19, u10_14i is u20_24 & u15_19 & u10_14i  & u6_9=0 & subop0_5=0b000100 {
             local max:4 = (1 << u10_14i) - 1;
@@ -736,31 +727,28 @@ with : isa=0 {
             if (ra s> max) goto <set_max>;
             if (ra s< min) goto <set_zero>;
             u20_24 = ra;
-            goto <end>;
+            goto inst_next;
             <set_max>
             u20_24 = max;
-            goto <end>;
+            goto inst_next;
             <set_zero>
             u20_24 = 0;
-            <end>
         }
         :CLO   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000110 { u20_24 = lzcount(~u15_19); }
         :CLZ   u20_24, u15_19          is u20_24 & u15_19 &           u6_14=0 & subop0_5=0b000111 { u20_24 = lzcount(u15_19); }
         :MAX   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000000 {
             if (u15_19 s>= u10_14) goto <set_ra>;
             u20_24 = u10_14;
-            goto <end>;
+            goto inst_next;
             <set_ra>
             u20_24 = u15_19;
-            <end>
         }
         :MIN   u20_24, u15_19, u10_14  is u20_24 & u15_19 & u10_14   & u6_9=0 & subop0_5=0b000001 {
             if (u15_19 s>= u10_14) goto <set_rb>;
             u20_24 = u15_19;
-            goto <end>;
+            goto inst_next;
             <set_rb>
             u20_24 = u10_14;
-            <end>
         }
     }
 
@@ -779,17 +767,15 @@ with : isa=0 {
             local b:4 = u10_14;
             u20_24 = a / b;
             # TODO dont emit pcode for this comparison, it could be constant
-            if (!(u5_9i:1 != u20_24i:1)) goto <end>;
+            if (!(u5_9i:1 != u20_24i:1)) goto inst_next;
             u5_9 = a % b;
-            <end>
         }
         :DIVSR u20_24, u5_9, u15_19, u10_14 is u20_24 & u20_24i & u15_19 & u10_14 & u5_9 & u5_9i & subop=0b10110 {
             local a:4 = u15_19;
             local b:4 = u10_14;
             u20_24 = a s/ b;
-            if (!(u5_9i:1 != u20_24i:1)) goto <end>;
+            if (!(u5_9i:1 != u20_24i:1)) goto inst_next;
             u5_9 = a s% b;
-            <end>
         }
     }
     # ALU_2
@@ -887,9 +873,8 @@ with : isa=0 {
             set_link_gpr(u20_24, inst_next);
             psw_ifcon_clear();
 
-            if (!(jaddr != 0)) goto <end>;
-                goto [jaddr];
-            <end>
+            if (!(jaddr != 0)) goto inst_next;
+            goto [jaddr];
         }
         # special case for Rt=LP
         :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 {
@@ -898,15 +883,13 @@ with : isa=0 {
             set_link_gpr(lp, inst_next);
             psw_ifcon_clear();
 
-            if (!(jaddr != 0)) goto <end>;
-                call [jaddr];
-            <end>
+            if (!(jaddr != 0)) goto inst_next;
+            call [jaddr];
         }
         :JRNEZ      u10_14          is u20_24=0  & u10_14 & subop=0b00010 {
-            if (!(u10_14 != 0)) goto <end>;
-                psw_ifcon_clear();
-                goto [u10_14];
-            <end>
+            if (!(u10_14 != 0)) goto inst_next;
+            psw_ifcon_clear();
+            goto [u10_14];
         }
     }
 
