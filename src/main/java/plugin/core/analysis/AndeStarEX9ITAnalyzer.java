@@ -23,6 +23,9 @@ public class AndeStarEX9ITAnalyzer extends AbstractAnalyzer {
     private final static String DESCRIPTION = "Annotates EX9.IT instructions";
 
     private final static CodeUnitFormat codeUnitFormat = new CodeUnitFormat(new CodeUnitFormatOptions());
+    private Listing listing;
+    private ReferenceManager refMgr;
+    private EX9ITDisassembler disassembler;
 
     public AndeStarEX9ITAnalyzer() {
         super(NAME, DESCRIPTION, AnalyzerType.INSTRUCTION_ANALYZER);
@@ -31,6 +34,12 @@ public class AndeStarEX9ITAnalyzer extends AbstractAnalyzer {
 
     @Override
     public boolean canAnalyze(Program program) {
+        listing = program.getListing();
+        refMgr = program.getReferenceManager();
+        disassembler = new EX9ITDisassembler(program);
+        if (!disassembler.isValid()) {
+            return false;
+        }
         return program.getLanguage().getProcessor().equals(
                 Processor.findOrPossiblyCreateProcessor(PROCESSOR_NAME));
     }
@@ -38,11 +47,6 @@ public class AndeStarEX9ITAnalyzer extends AbstractAnalyzer {
     @Override
     public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
             throws CancelledException {
-        Listing listing = program.getListing();
-        ReferenceManager refMgr = program.getReferenceManager();
-
-        EX9ITDisassembler disassembler = new EX9ITDisassembler(program);
-
         for (Address addr : set.getAddresses(true)) {
             PseudoInstruction itInsn = disassembler.getITInstruction(addr);
             if (itInsn == null) {

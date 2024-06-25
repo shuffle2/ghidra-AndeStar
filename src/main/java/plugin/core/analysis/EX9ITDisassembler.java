@@ -42,6 +42,10 @@ public class EX9ITDisassembler {
 		zeroAddress = program.getAddressFactory().getDefaultAddressSpace().getAddress(0);
 	}
 
+	public boolean isValid() {
+		return itbReg != null;
+	}
+
 	boolean instructionIsEX9IT(Instruction insn) {
 		return insn.getMnemonicString().equals(EX9IT_MNEMONIC);
 	}

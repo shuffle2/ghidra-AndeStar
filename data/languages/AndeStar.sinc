@@ -23,9 +23,11 @@ define register offset=0x80 size=4 [
     d0.hi d0.lo d1.hi d1.lo
     LB LE LC
     ITB IFC_LP PC
+
     # Group 1
     DMA_CFG DMA_GCSW DMA_CHNSEL DMA_ACT DMA_SETUP DMA_ISADDR DMA_ESADDR DMA_TCNT DMA_STATUS DMA_2DSET
     DMA_2DSCTL
+
     # Group 2
     PFMC0 PFMC1 PFMC2
     PFM_CTL
@@ -487,6 +489,7 @@ with : isa=0 {
         :JAL imm24s_rel is u24_24=1 & imm24s_rel {
             set_link_gpr(lp, inst_next);
             psw_ifcon_clear();
+            # TODO this should be branch (or: call with retaddr=IFC_LP hint), if flow has IFC_ON==1
             call imm24s_rel;
         }
     }
@@ -1165,7 +1168,6 @@ with : isa_s=1 {
 
 ########## DSP ISA Extension
 
-    # TODO flow analysis gets screwed up by IFCALL/IFRET
     imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
     :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
         ifcall(imm9s_rel);
