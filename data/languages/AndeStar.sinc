@@ -107,7 +107,9 @@ define token instr32(32) endian=big
     opc         = (25,30)
     subop       = (0,4)
     subop0_5    = (0,5)
+    subop0_6    = (0,6)
 
+    dthi21 = (21,21)
     dtlo21 = (21,21)
     dt21 = (21,21)
 
@@ -136,6 +138,7 @@ define token instr32(32) endian=big
     u22_24=(22,24)
     u21_24=(21,24)
     u20_20=(20,20)
+    u7_14=(7,14)
     u6_14=(6,14)
 
     u24_24  = (24,24)
@@ -179,6 +182,23 @@ define token instr32(32) endian=big
 
     OpSz=(31,31)
     Opc=(25,30)
+    Rt          = (20, 24)
+    Rth         = (21, 24)
+    Rtl         = (21, 24)
+    Ra          = (15, 19)
+    Rb          = (10, 14)
+    Rd          = (5, 9)
+    Rs          = (5, 9)
+    Sub5        = (0, 4)
+    Sub6        = (0, 5)
+    Sub8        = (0, 7)
+
+    Alu2Mod     = (6, 9)
+
+    MsyncZ      = (8, 19)
+    MsyncSub    = (5, 7)
+
+    TlbopSub    = (5, 9)
 
     LsmwRa = (15, 19)
     LsmwRb = (20, 24)
@@ -234,12 +254,17 @@ define token instr16(16) endian=big
     imm3u = (0,2)
 
     lwi37 = (7,7)
+
+    opsz        = (15, 15)
+    opc4        = (11, 14)
+    opc6        = (9, 14)
 ;
 
 # GPRs - 32/16bit instructions, 5bit index
 attach variables [
     u20_24 u15_19 u10_14 u5_9
     R5_5_9 R5_0_4
+    Rt Rs Ra Rb Rd
     LsmwRa LsmwRb LsmwRe
 ] [
     a0 a1 a2 a3 a4 a5
@@ -274,6 +299,7 @@ attach variables [R4_0_3 R4_4_7] [
 
 # USRs
 attach variables [dtlo21] [d0.lo d1.lo];
+attach variables [dthi21] [d0.hi d1.hi];
 attach variables [dt21] [d0 d1];
 
 attach names [setend20] [L B];
@@ -295,6 +321,7 @@ define pcodeop Exception_Trap;
 define pcodeop cctl;
 define pcodeop dsb;
 define pcodeop isb;
+define pcodeop msync;
 define pcodeop isync;
 define pcodeop mfsr;
 define pcodeop mtsr;
@@ -358,6 +385,7 @@ macro set_link_gpr(gpr, target) {
 @define JI      "(Opc=0b100100)"
 @define MEM     "(Opc=0b011100)"
 @define MISC    "(Opc=0b110010)"
+@define BITCI   "(Opc=0b110011)"
 @define JREG    "(Opc=0b100101)"
 @define SBGP    "(Opc=0b011111)"
 @define LBGP    "(Opc=0b010111)"
@@ -366,9 +394,8 @@ macro set_link_gpr(gpr, target) {
 
 @include "lsmw.sinc"
 
-with : isa=0 {
-    # ALU_1
-    with : opc=0b100000 & u5_9i=0 {
+with : $(I32) {
+    with : $(ALU_1) & u5_9i=0 {
         :ADD   u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00000 { u20_24 =   u15_19 + u10_14; }
         :AND   u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00010 { u20_24 =   u15_19 & u10_14; }
         :OR    u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & subop=0b00100 { u20_24 =   u15_19 | u10_14; }
@@ -425,17 +452,19 @@ with : isa=0 {
                 ((u15_19 & 0xff000000) >> 8);
         }
     }
-    # ALU_2
-    with : opc=0b100001 {
+    with : $(ALU_2) {
         :BTST u20_24, u15_19, u0_5 is u20_24 & u15_19 & u0_5 & subop0_5=0b001011 {
             u20_24 = zext((u15_19 & (1 << u0_5)) != 0);
         }
+
         :MUL u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b100100 { u20_24 = u15_19 * u10_14; }
-        :MADD32 dtlo21, u15_19, u10_14  is u22_24=0 & dtlo21 & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b110011 {
-            local a = u15_19;
-            local b = u10_14;
-            local m = a * b;
-            dtlo21 = dtlo21 + m;
+        :MULTS64 dt21,    u15_19, u10_14 is u22_24=0 & dt21    & u20_20=0 & u15_19 & u10_14 & $(ALU2Z) & subop0_5=0b101000 { dt21 = sext(u15_19) * sext(u10_14); }
+        :MULT64  dt21,    u15_19, u10_14 is u22_24=0 & dt21    & u20_20=0 & u15_19 & u10_14 & $(ALU2Z) & subop0_5=0b101001 { dt21 = zext(u15_19) * zext(u10_14); }
+        :MADDS64 dt21, u15_19, u10_14   is u22_24=0 & dt21   & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b101010 {
+            local a:8 = sext(u15_19);
+            local b:8 = sext(u10_14);
+            local m:8 = a * b;
+            dt21 = dt21 + m;
         }
         :MADD64 dt21, u15_19, u10_14    is u22_24=0 & dt21   & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b101011 {
             local a:8 = zext(u15_19);
@@ -443,21 +472,37 @@ with : isa=0 {
             local m:8 = a * b;
             dt21 = dt21 + m;
         }
-        :MADDS64 dt21, u15_19, u10_14   is u22_24=0 & dt21   & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b101010 {
-            local a:8 = sext(u15_19);
-            local b:8 = sext(u10_14);
-            local m:8 = a * b;
-            dt21 = dt21 + m;
+        :MSUBS64 dt21,    u15_19, u10_14 is u22_24=0 & dt21    & u20_20=0 & u15_19 & u10_14 & $(ALU2Z) & subop0_5=0b101100 { dt21 = dt21 - (sext(u15_19) * sext(u10_14)); }
+        :MSUB64  dt21,    u15_19, u10_14 is u22_24=0 & dt21    & u20_20=0 & u15_19 & u10_14 & $(ALU2Z) & subop0_5=0b101101 { dt21 = dt21 - (zext(u15_19) * zext(u10_14)); }
+        :MULT32  dtlo21, u15_19, u10_14 is u22_24=0 & dtlo21 & u20_20=0 & u15_19 & u10_14 & $(ALU2Z) & subop0_5=0b110001 { dtlo21 = u15_19 * u10_14; }
+        :MADD32 dtlo21, u15_19, u10_14  is u22_24=0 & dtlo21 & u20_20=0 & u15_19 & u10_14 & u6_9=0 & subop0_5=0b110011 {
+            local a = u15_19;
+            local b = u10_14;
+            local m = a * b;
+            dtlo21 = dtlo21 + m;
+        }
+        :MSUB32  dtlo21, u15_19, u10_14 is u22_24=0 & dtlo21 & u20_20=0 & u15_19 & u10_14 & $(ALU2Z) & subop0_5=0b110101 { dtlo21 = dtlo21 - (u15_19 * u10_14); }
+
+        :DIV  dt21, Ra, Rb is u22_24=0 & dt21 & dtlo21 & dthi21 & u20_20=0 & Ra & Rb & $(ALU2Z) & Sub6=0b101111 {
+            dtlo21 = Ra  / Rb;
+            dthi21 = Ra  % Rb;
+        }
+        :DIVS dt21, Ra, Rb is u22_24=0 & dt21 & dtlo21 & dthi21 & u20_20=0 & Ra & Rb & $(ALU2Z) & Sub6=0b101110 {
+            dtlo21 = Ra s/ Rb;
+            dthi21 = Ra s% Rb;
         }
 
         USR_Name: d0.hi         is d0.hi    & u10_14i=0 & u15_19i=0 { export d0.hi; }
         USR_Name: d0.lo         is d0.lo    & u10_14i=0 & u15_19i=1 { export d0.lo; }
         USR_Name: d1.hi         is d1.hi    & u10_14i=0 & u15_19i=2 { export d1.hi; }
         USR_Name: d1.lo         is d1.lo    & u10_14i=0 & u15_19i=3 { export d1.lo; }
+        # ZOL Extension
         USR_Name: LB            is LB       & u10_14i=0 & u15_19i=25 { export LB; }
         USR_Name: LE            is LE       & u10_14i=0 & u15_19i=26 { export LE; }
         USR_Name: LC            is LC       & u10_14i=0 & u15_19i=27 { export LC; }
+        # EX9.IT Extension
         USR_Name: ITB           is ITB      & u10_14i=0 & u15_19i=28 { export ITB; }
+        # IFC Extension?
         USR_Name: IFC_LP        is IFC_LP   & u10_14i=0 & u15_19i=29 { export IFC_LP; }
         USR_Name: PC            is PC       & u10_14i=0 & u15_19i=31 { export PC; }
         USR_Name: DMA_CFG       is DMA_CFG      & u10_14i=1 & u15_19i=0 { export DMA_CFG; }
@@ -486,8 +531,7 @@ with : isa=0 {
     imm16s_rel: rel is s0_15 [ rel = inst_start + (s0_15 << 1); ] { export *:4 rel; }
     imm24s_rel: rel is s0_23 [ rel = inst_start + (s0_23 << 1); ] { export *:4 rel; }
 
-    # BR1
-    with : opc=0b100110 {
+    with : $(BR1) {
         :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel {
             branch_if(u20_24 == u15_19, imm14s_rel);
         }
@@ -495,8 +539,7 @@ with : isa=0 {
             branch_if(u20_24 != u15_19, imm14s_rel);
         }
     }
-    # BR2
-    with : opc=0b100111 {
+    with : $(BR2) {
         :BEQZ u20_24, imm16s_rel is u20_24 & u16_19=0b0010 & imm16s_rel { branch_if(u20_24 == 0, imm16s_rel); }
         :BNEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0011 & imm16s_rel { branch_if(u20_24 != 0, imm16s_rel); }
         :BGEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0100 & imm16s_rel { branch_if(u20_24 s>= 0, imm16s_rel); }
@@ -514,8 +557,7 @@ with : isa=0 {
             call_if(bcond s< 0, imm16s_rel);
         }
     }
-    # JI
-    with : opc=0b100100 {
+    with : $(JI) {
         :J   imm24s_rel is u24_24=0 & imm24s_rel { psw_ifcon_clear(); goto imm24s_rel; }
         :JAL imm24s_rel is u24_24=1 & imm24s_rel {
             set_link_gpr(lp, inst_next);
@@ -524,8 +566,7 @@ with : isa=0 {
             call imm24s_rel;
         }
     }
-    # JREG
-    with : opc=0b100101 {
+    with : $(JREG) {
         :JR  u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=0 & subop=0b00000 {
             psw_ifcon_clear();
             goto [u10_14];
@@ -584,9 +625,16 @@ with : isa=0 {
             psw_ifcon_clear();
             call [jaddr];
         }
+        :RET."[T|IT]OFF" u10_14 is u15_24=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=1 & subop=0b00000 {
+            #PSW.IT = 0;
+            #if (!(u8_9 == 0b11)) goto <do_branch>;
+            #    PSW.DT = 0;
+            #<do_branch>
+            psw_ifcon_clear();
+            return [u10_14];
+        }
     }
-    # MISC
-    with : opc=0b110010 {
+    with : $(MISC) {
         # Generate_Exception
         :BREAK   u5_19 is u20_24=0 & u5_19 & subop=0b01010 { Exception_Breakpoint(u5_19:2); }
         :SYSCALL u5_19 is u20_24=0 & u5_19 & subop=0b01011 { Exception_System_Call(u5_19:2); }
@@ -606,6 +654,7 @@ with : isa=0 {
         }
         :DSB is u20_24=0 & u5_19=0 & subop=0b01000 { dsb(); }
         :ISB is u20_24=0 & u5_19=0 & subop=0b01001 { isb(); }
+        :MSYNC MsyncSub is u20_24=0 & MsyncZ=0 & MsyncSub & subop=0b01100 { msync(MsyncSub:1); }
         :ISYNC u20_24 is u20_24 & u5_19=0 & subop=0b01101 { isync(u20_24:1); }
         :IRET is u20_24=0 & u5_19=0 & subop=0b00100 { return [IPC]; }
         :MFSR u20_24, u10_19 is u20_24 & u10_19 & u5_9i=0 & subop=0b00010 { u20_24 = mfsr(u10_19:3); }
@@ -613,9 +662,25 @@ with : isa=0 {
         :SETEND.^setend20 is u21_24=0 & setend20 & u10_19=0b0010000000 & u5_9i=0b00001 & subop=0b00011 { setend(setend20:1); }
         :SETGIE.^setgie20 is u21_24=0 & setgie20 & u10_19=0b0010000000 & u5_9i=0b00010 & subop=0b00011 { setgie(setgie20:1); }
         :STANDBY is u20_24=0 & u10_19=0 & u7_9=0 & standby5_6 & subop=0b00000 { standby(standby5_6:1); }
+
+        define pcodeop TLB_TargetRead;
+        define pcodeop TLB_TargetWrite;
+        define pcodeop TLB_RWrite;
+        define pcodeop TLB_RWriteLock;
+        define pcodeop TLB_Unlock;
+        define pcodeop TLB_Probe;
+        define pcodeop TLB_Invalidate;
+        define pcodeop TLB_FlushAll;
+        :TLBOP Ra,"TargetRead"  is Rt & Ra & Rb=0 & TlbopSub=0 & Sub5=0b01110 { TLB_TargetRead(Ra:4); }
+        :TLBOP Ra,"TargetWrite" is Rt & Ra & Rb=0 & TlbopSub=1 & Sub5=0b01110 { TLB_TargetWrite(Ra:4); }
+        :TLBOP Ra,"RWrite"      is Rt & Ra & Rb=0 & TlbopSub=2 & Sub5=0b01110 { TLB_RWrite(Ra:4); }
+        :TLBOP Ra,"RWriteLock"  is Rt & Ra & Rb=0 & TlbopSub=3 & Sub5=0b01110 { TLB_RWriteLock(Ra:4); }
+        :TLBOP Ra,"Unlock"      is Rt & Ra & Rb=0 & TlbopSub=4 & Sub5=0b01110 { TLB_Unlock(Ra:4); }
+        :TLBOP Rt,Ra,"Probe"    is Rt & Ra & Rb=0 & TlbopSub=5 & Sub5=0b01110 { TLB_Probe(Rt:4, Ra:4); }
+        :TLBOP Ra,"Invalidate"  is Rt & Ra & Rb=0 & TlbopSub=6 & Sub5=0b01110 { TLB_Invalidate(Ra:4); }
+        :TLBOP "FlushAll"       is Rt & Ra & Rb=0 & TlbopSub=7 & Sub5=0b01110 { TLB_FlushAll(); }
     }
-    # MEM
-    with : opc=0b011100 {
+    with : $(MEM) {
         addr1  : [u15_19 + (u10_14 "<<" u8_9)] is u15_19 & u10_14 & u8_9 { local addr:4 = u15_19 + (u10_14 << u8_9); export addr; }
         addr1bi: [u15_19], (u10_14 "<<" u8_9)  is u15_19 & u10_14 & u8_9 { bi_addr = u15_19 + (u10_14 << u8_9); export u15_19; }
 
@@ -643,7 +708,6 @@ with : isa=0 {
         :SCW    u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00011001 unimpl
         :SWUP   u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00101010 unimpl
     }
-    # LSMW
     with : $(LSMW) {
         LsmwBa_: "b" is LsmwBa=0 { }
         LsmwBa_: "a" is LsmwBa=1 { }
@@ -696,6 +760,7 @@ with : isa=0 {
 
     :ADDI  u20_24, u15_19, s0_14 is opc=0b101000 & u20_24 & u15_19 & s0_14 { u20_24 = u15_19 + s0_14; }
     :ANDI  u20_24, u15_19, u0_14 is opc=0b101010 & u20_24 & u15_19 & u0_14 { u20_24 = u15_19 & u0_14; }
+    :ZEB   u20_24, u15_19        is opc=0b101010 & u20_24 & u15_19 & u0_14=0xff { u20_24 = zext(u15_19:1); }
     :ORI   u20_24, u15_19, u0_14 is opc=0b101100 & u20_24 & u15_19 & u0_14 { u20_24 = u15_19 | u0_14; }
     :XORI  u20_24, u15_19, u0_14 is opc=0b101011 & u20_24 & u15_19 & u0_14 { u20_24 = u15_19 ^ u0_14; }
     :SUBRI u20_24, u15_19, s0_14 is opc=0b101001 & u20_24 & u15_19 & s0_14 { u20_24 = s0_14 - u15_19; }
@@ -705,10 +770,9 @@ with : isa=0 {
     :MOVI  u20_24, s0_19 is opc=0b100010 & u20_24 & s0_19 { u20_24 = s0_19; }
     :SETHI u20_24, u0_19 is opc=0b100011 & u20_24 & u0_19 { u20_24 = u0_19 << 12; }
 
-############# V1 perf extensions
+############# V1 Performance Extensions
 
-    # ALU_2
-    with : opc=0b100001 {
+    with : $(ALU_2) {
         :ABS   u20_24, u15_19          is u20_24 & u15_19 & u10_14=0 & u6_9=0 & subop0_5=0b000011 {
             local ra = u15_19;
             if (ra s>= 0) goto <set_val>;
@@ -772,14 +836,22 @@ with : isa=0 {
         }
     }
 
+############# STRING Extension
+
+    with : $(ALU_2) {
+        :FFB    Rt, Ra, Rb    is Rt & Ra & Rb & u7_9=0 & subop0_6=0b0001110 unimpl
+        :FFBI   Rt, Ra, u7_14 is Rt & Ra & u7_14       & subop0_6=0b1001110 unimpl
+        :FFMISM Rt, Ra, Rb    is Rt & Ra & Rb & u7_9=0 & subop0_6=0b0001111 unimpl
+        :FLMISM Rt, Ra, Rb    is Rt & Ra & Rb & u7_9=0 & subop0_6=0b1001111 unimpl
+    }
+
 ############# V2 Baseline
 
     gprel17: [+rel] is s0_16 [rel = s0_16 << 2;] { local addr:4 = gp + rel; export addr; }
     gprel18: [+rel] is s0_17 [rel = s0_17 << 1;] { local addr:4 = gp + rel; export addr; }
     gprel19: [+s0_18] is s0_18 { local addr:4 = gp + s0_18; export addr; }
 
-    # ALU_1
-    with : opc=0b100000 {
+    with : $(ALU_1) {
         # TODO check div by zero and IDIVZE state
         # NOTE register order in disasm differs from instruction bitfield
         :DIVR u20_24, u5_9, u15_19, u10_14 is u20_24 & u20_24i & u15_19 & u10_14 & u5_9 & u5_9i & subop=0b10111 {
@@ -798,8 +870,7 @@ with : isa=0 {
             u5_9 = a s% b;
         }
     }
-    # ALU_2
-    with : opc=0b100001 {
+    with : $(ALU_2) {
         :MADDR32 u20_24, u15_19, u10_14 is u20_24 & u15_19 & u10_14 & u6_9=0b0001 & subop0_5=0b110011 {
             local a:4 = u15_19;
             local b:4 = u10_14;
@@ -837,18 +908,15 @@ with : isa=0 {
             *[register]:4 rt1 = h;
         }
     }
-    # LBGP
-    with : opc=0b010111 {
+    with : $(LBGP) {
         :LBI.gp  u20_24, gprel19 is u20_24 & u19_19=0 & gprel19 { u20_24 = zext(*:1 gprel19); }
         :LBSI.gp u20_24, gprel19 is u20_24 & u19_19=1 & gprel19 { u20_24 = sext(*:1 gprel19); }
     }
-    # SBGP
-    with : opc=0b011111 {
+    with : $(SBGP) {
         :SBI.gp u20_24, gprel19 is u20_24 & u19_19=0 & gprel19 { *:1 gprel19 = u20_24:1; }
         :ADDI.gp u20_24, s0_18 is u20_24 & u19_19=1 & s0_18 { u20_24 = gp + s0_18; }
     }
-    # HWGP
-    with : opc=0b011110 {
+    with : $(HWGP) {
         :LHI.gp  u20_24, gprel18 is u20_24 & hwgp18_19=0b00  & gprel18 { u20_24 = zext(*:2 gprel18); }
         :LHSI.gp u20_24, gprel18 is u20_24 & hwgp18_19=0b01  & gprel18 { u20_24 = sext(*:2 gprel18); }
         :LWI.gp  u20_24, gprel17 is u20_24 & hwgp17_19=0b110 & gprel17 { u20_24 = *:4 gprel17; }
@@ -869,11 +937,46 @@ with : isa=0 {
             build LsmwM_;
         }
     }
+    with : $(MEM) {
+        :LBUP u20_24, addr1 is u20_24 & addr1 & u0_7=0b00100000 unimpl
+        :SBUP u20_24, addr1 is u20_24 & addr1 & u0_7=0b00101000 unimpl
+    }
+
+############# V2 Performance Extensions
+
+    with : $(ALU_2) & $(ALU2Z) {
+        :BSE is Rt & Ra & Rb & Sub6=0b001100 unimpl
+        :BSP is Rt & Ra & Rb & Sub6=0b001101 unimpl
+    }
+
+    macro add_abs_diff(dst, src1, src2, shift) {
+        local src1_ = src1 >> shift;
+        local src2_ = src2 >> shift;
+        local a = src1_:1 - src2_:1;
+        local agez:1 = a s>= 0;
+        local altz:1 = a s< 0;
+        local aabs:1 = (a * agez) | ((-a) * altz);
+        dst = dst + zext(aabs);
+    }
+    with : $(SIMD) & Rd=0 {
+        :PBSAD Rt, Ra, Rb is Rt & Ra & Rb & Sub5=0b0000 {
+            Rt = 0;
+            add_abs_diff(Rt, Ra, Rb, 0);
+            add_abs_diff(Rt, Ra, Rb, 8);
+            add_abs_diff(Rt, Ra, Rb, 16);
+            add_abs_diff(Rt, Ra, Rb, 24);
+        }
+        :PBSADA Rt, Ra, Rb is Rt & Ra & Rb & Sub5=0b0001 {
+            add_abs_diff(Rt, Ra, Rb, 0);
+            add_abs_diff(Rt, Ra, Rb, 8);
+            add_abs_diff(Rt, Ra, Rb, 16);
+            add_abs_diff(Rt, Ra, Rb, 24);
+        }
+    }
 
 ############# V3 Baseline
 
-    # ALU_1
-    with : opc=0b100000 {
+    with : $(ALU_1) {
         :BITC       u20_24, u15_19, u10_14        is u20_24 & u15_19 & u10_14 & u5_9i=0b00000 & subop=0b10010 { u20_24 = u15_19 & ~u10_14; }
         :ADD_SLLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b00000 { u20_24 = u15_19 + (u10_14 << u5_9i); }
         :ADD_SRLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b11100 { u20_24 = u15_19 + (u10_14 >> u5_9i); }
@@ -886,18 +989,15 @@ with : isa=0 {
         :XOR_SLLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b00011 { u20_24 = u15_19 ^ (u10_14 << u5_9i); }
         :XOR_SRLI   u20_24, u15_19, u10_14, u5_9i is u20_24 & u15_19 & u10_14 & u5_9i & subop=0b11111 { u20_24 = u15_19 ^ (u10_14 >> u5_9i); }
     }
-    # BR3
-    with : opc=0b101101 {
+    with : $(BR3) {
         imm8s_rel: rel is s0_7 [ rel = inst_start + (s0_7 << 1); ] { export *:4 rel; }
         :BEQC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=0 { branch_if(u20_24 == s8_18, imm8s_rel); }
         :BNEC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=1 { branch_if(u20_24 != s8_18, imm8s_rel); }
     }
-    # BITCI
-    with : opc=0b110011 {
+    with : $(BITCI) {
         :BITCI u20_24, u15_19, u0_14 is u20_24 & u15_19 & u0_14 { u20_24 = u15_19 & ~u0_14; }
     }
-    # JREG
-    with : opc=0b100101 & u5_9=0 {
+    with : $(JREG) & u5_9=0 {
         :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 {
             local jaddr:4 = u10_14;
 
@@ -926,18 +1026,17 @@ with : isa=0 {
 
 ############# DSP ISA Extension
 
-    # BR2 SOP0
-    with : opc=0b100111 & u16_19=0b0000 {
+    # SOP0
+    with : $(BR2) & u16_19=0b0000 {
         :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel {
             ifcall(imm16s_rel);
         }
 
-        # ZOL Optional
+        # ZOL (Zero Overhead Loop) Optional
         :MTLBI imm16s_rel is u20_24=0b00001 & imm16s_rel { LB = inst_start + imm16s_rel; }
         :MTLEI imm16s_rel is u20_24=0b00010 & imm16s_rel { LE = inst_start + imm16s_rel; }
     }
-    # JREG
-    with : opc=0b100101 {
+    with : $(JREG) {
         # haven't seen this used, but it's in binutils
         :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 {
             ifret();
@@ -945,18 +1044,22 @@ with : isa=0 {
     }
 }
 
-with : isa_s=1 {
-    # BFMI333
-    with : op9_14=0b001011 {
-        :XEB33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b000 { R3_6_8 = zext(R3_3_5:1); }
-        :XEH33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b001 { R3_6_8 = zext(R3_3_5:2); }
+@define I16     "(opsz=1)"
+@define BFMI333 "(opc6=0b001011)"
+@define XWI37   "(opc4=0b0111)"
+@define XWI37SP "(opc4=0b1110)"
+@define MISC33  "(opc6=0b111111)"
+
+with : $(I16) {
+    with : $(BFMI333) {
+        :ZEB33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b000 { R3_6_8 = zext(R3_3_5:1); }
+        :ZEH33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b001 { R3_6_8 = zext(R3_3_5:2); }
         :SEB33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b010 { R3_6_8 = sext(R3_3_5:1); }
         :SEH33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b011 { R3_6_8 = sext(R3_3_5:2); }
         :XLSB33 R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b100 { R3_6_8 = R3_3_5 & 1; }
         :X11B33 R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b101 { R3_6_8 = R3_3_5 & 0x7ff; }
     }
-    # XWI37
-    with : op11_14=0b0111 {
+    with : $(XWI37) {
         fprel: [fp + rel] is fp & imm7u [rel = imm7u << 2;] { local addr:4 = fp + rel; export addr; }
         :LWI37 R3_8_10, fprel is R3_8_10 & lwi37=0 & fprel { R3_8_10 = *:4 fprel; }
         :SWI37 R3_8_10, fprel is R3_8_10 & lwi37=1 & fprel { *:4 fprel = R3_8_10; }
@@ -1025,8 +1128,7 @@ with : isa_s=1 {
     :SUBI45  R4_5_8, imm5u is op9_14=0b000111 & R4_5_8 & imm5u { R4_5_8 = R4_5_8 - imm5u; }
 
 ########## V2 Baseline
-    # XWI37SP
-    with : op11_14=0b1110 {
+    with : $(XWI37SP) {
         sprel: [+rel] is imm7u [rel = imm7u << 2;] { local addr:4 = sp + rel; export addr; }
         :LWI37.sp R3_8_10, sprel is R3_8_10 & lwi37=0 & sprel { R3_8_10 = *:4 sprel; }
         :SWI37.sp R3_8_10, sprel is R3_8_10 & lwi37=1 & sprel { *:4 sprel = R3_8_10:4; }
@@ -1039,8 +1141,7 @@ with : isa_s=1 {
 
     :ADDRI36.sp R3_6_8, imm8u_6 is op9_14=0b011000 & R3_6_8 & imm8u_6 { R3_6_8 = sp + imm8u_6; }
     :ADD5.pc R5_0_4 is op5_14=0b1011101101 & R5_0_4 { R5_0_4 = inst_start + R5_0_4; }
-    # MISC33
-    with : op9_14=0b111111 {
+    with : $(MISC33) {
         :AND33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b110 { R3_6_8 = R3_6_8 & R3_3_5; }
         :MUL33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b100 { R3_6_8 = R3_6_8 * R3_3_5; }
         :NEG33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b010 { R3_6_8 = -R3_3_5; }
@@ -1048,8 +1149,7 @@ with : isa_s=1 {
         :OR33   R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b111 { R3_6_8 = R3_6_8 | R3_3_5; }
         :XOR33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b101 { R3_6_8 = R3_6_8 ^ R3_3_5; }
     }
-    # BFMI333
-    with : op9_14=0b001011 {
+    with : $(BFMI333) {
         :BMSKI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b110 { R3_6_8 = R3_6_8 & (1 << imm3u); }
         :FEXTI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b111 { R3_6_8 = R3_6_8 & ((1 << (imm3u + 1)) - 1); }
     }
