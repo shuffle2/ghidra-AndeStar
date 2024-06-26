@@ -671,14 +671,16 @@ with : $(I32) {
         define pcodeop TLB_Probe;
         define pcodeop TLB_Invalidate;
         define pcodeop TLB_FlushAll;
-        :TLBOP Ra,"TargetRead"  is Rt & Ra & Rb=0 & TlbopSub=0 & Sub5=0b01110 { TLB_TargetRead(Ra:4); }
-        :TLBOP Ra,"TargetWrite" is Rt & Ra & Rb=0 & TlbopSub=1 & Sub5=0b01110 { TLB_TargetWrite(Ra:4); }
-        :TLBOP Ra,"RWrite"      is Rt & Ra & Rb=0 & TlbopSub=2 & Sub5=0b01110 { TLB_RWrite(Ra:4); }
-        :TLBOP Ra,"RWriteLock"  is Rt & Ra & Rb=0 & TlbopSub=3 & Sub5=0b01110 { TLB_RWriteLock(Ra:4); }
-        :TLBOP Ra,"Unlock"      is Rt & Ra & Rb=0 & TlbopSub=4 & Sub5=0b01110 { TLB_Unlock(Ra:4); }
-        :TLBOP Rt,Ra,"Probe"    is Rt & Ra & Rb=0 & TlbopSub=5 & Sub5=0b01110 { TLB_Probe(Rt:4, Ra:4); }
-        :TLBOP Ra,"Invalidate"  is Rt & Ra & Rb=0 & TlbopSub=6 & Sub5=0b01110 { TLB_Invalidate(Ra:4); }
-        :TLBOP "FlushAll"       is Rt & Ra & Rb=0 & TlbopSub=7 & Sub5=0b01110 { TLB_FlushAll(); }
+        with : Rb=0 & Sub5=0b01110 {
+            :TLBOP Ra,"TargetRead"  is Rt & Ra & TlbopSub=0 { TLB_TargetRead(Ra:4); }
+            :TLBOP Ra,"TargetWrite" is Rt & Ra & TlbopSub=1 { TLB_TargetWrite(Ra:4); }
+            :TLBOP Ra,"RWrite"      is Rt & Ra & TlbopSub=2 { TLB_RWrite(Ra:4); }
+            :TLBOP Ra,"RWriteLock"  is Rt & Ra & TlbopSub=3 { TLB_RWriteLock(Ra:4); }
+            :TLBOP Ra,"Unlock"      is Rt & Ra & TlbopSub=4 { TLB_Unlock(Ra:4); }
+            :TLBOP Rt,Ra,"Probe"    is Rt & Ra & TlbopSub=5 { TLB_Probe(Rt:4, Ra:4); }
+            :TLBOP Ra,"Invalidate"  is Rt & Ra & TlbopSub=6 { TLB_Invalidate(Ra:4); }
+            :TLBOP "FlushAll"       is Rt & Ra & TlbopSub=7 { TLB_FlushAll(); }
+        }
     }
     with : $(MEM) {
         addr1  : [u15_19 + (u10_14 "<<" u8_9)] is u15_19 & u10_14 & u8_9 { local addr:4 = u15_19 + (u10_14 << u8_9); export addr; }
