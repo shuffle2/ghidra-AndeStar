@@ -301,8 +301,6 @@ define pcodeop mtsr;
 define pcodeop setend;
 define pcodeop setgie;
 define pcodeop standby;
-define pcodeop lmw;
-define pcodeop smw;
 define pcodeop ex9it;
 
 # for now, IFC_ON is dedicated register to make pcode more simple.
@@ -649,23 +647,17 @@ with : isa=0 {
     with : opc=0b011101 {
         LsmwBa_: "b" is LsmwBa=0 { }
         LsmwBa_: "a" is LsmwBa=1 { }
-
         LsmwId_: "i" is LsmwId=0 { }
         LsmwId_: "d" is LsmwId=1 { }
-
         LsmwM_: ""  is LsmwRa & LsmwM=0 { }
         LsmwM_: "m" is LsmwRa & LsmwM=1 { LsmwRa = mult_addr; }
 
-
-        :LMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is $(I32) & $(LSMW) & LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=0 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Lmw.regs
-        {
+        :LMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is $(I32) & $(LSMW) & LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=0 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Lmw.regs {
             mult_addr = LsmwRa;
             build Lmw.regs;
             build LsmwM_;
         }
-
-        :SMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is $(I32) & $(LSMW) & LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=1 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Smw.regs
-        {
+        :SMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is $(I32) & $(LSMW) & LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=1 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Smw.regs {
             mult_addr = LsmwRa;
             build Smw.regs;
             build LsmwM_;
@@ -884,13 +876,11 @@ with : isa=0 {
     # BR3
     with : opc=0b101101 {
         imm8s_rel: rel is s0_7 [ rel = inst_start + (s0_7 << 1); ] { export *:4 rel; }
-        # TODO sext(s8_18)?
         :BEQC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=0 { branch_if(u20_24 == s8_18, imm8s_rel); }
         :BNEC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=1 { branch_if(u20_24 != s8_18, imm8s_rel); }
     }
     # BITCI
     with : opc=0b110011 {
-        # TODO zext(u0_14)?
         :BITCI u20_24, u15_19, u0_14 is u20_24 & u15_19 & u0_14 { u20_24 = u15_19 & ~u0_14; }
     }
     # JREG
@@ -1050,7 +1040,7 @@ with : isa_s=1 {
         :BMSKI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b110 { R3_6_8 = R3_6_8 & (1 << imm3u); }
         :FEXTI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b111 { R3_6_8 = R3_6_8 & ((1 << (imm3u + 1)) - 1); }
     }
-    # TODO sext?
+    # imm7n shall be in range [-128,-4]
     imm7n: imm is imm5u [imm = (imm5u - 32) << 2;] { export *[const]:4 imm; }
     :LWI45.FE R4_5_8, [imm7n] is op9_14=0b011001 & R4_5_8 & imm7n {
         R4_5_8 = *:4 (s2 + imm7n);
