@@ -644,7 +644,7 @@ with : isa=0 {
         :SWUP   u20_24, addr1    is u20_24 &          addr1   & u0_7=0b00101010 unimpl
     }
     # LSMW
-    with : opc=0b011101 {
+    with : $(LSMW) {
         LsmwBa_: "b" is LsmwBa=0 { }
         LsmwBa_: "a" is LsmwBa=1 { }
         LsmwId_: "i" is LsmwId=0 { }
@@ -652,12 +652,12 @@ with : isa=0 {
         LsmwM_: ""  is LsmwRa & LsmwM=0 { }
         LsmwM_: "m" is LsmwRa & LsmwM=1 { LsmwRa = mult_addr; }
 
-        :LMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is $(I32) & $(LSMW) & LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=0 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Lmw.regs {
+        :LMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=0 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Lmw.regs {
             mult_addr = LsmwRa;
             build Lmw.regs;
             build LsmwM_;
         }
-        :SMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is $(I32) & $(LSMW) & LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=1 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Smw.regs {
+        :SMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=1 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Smw.regs {
             mult_addr = LsmwRa;
             build Smw.regs;
             build LsmwM_;
@@ -855,6 +855,19 @@ with : isa=0 {
 
         :SHI.gp  u20_24, gprel18 is u20_24 & hwgp18_19=0b10  & gprel18 { *:2 gprel18 = u20_24:2; }
         :SWI.gp  u20_24, gprel17 is u20_24 & hwgp17_19=0b111 & gprel17 { *:4 gprel17 = u20_24:4; }
+    }
+    with : $(LSMW) {
+        # Difference from LMW/SMW is that this requires Ra be word aligned, and fp/sp order are inverted.
+        :LMWA.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=0 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b01 & Lmwa.regs {
+            mult_addr = LsmwRa;
+            build Lmwa.regs;
+            build LsmwM_;
+        }
+        :SMWA.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=1 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b01 & Smwa.regs {
+            mult_addr = LsmwRa;
+            build Smwa.regs;
+            build LsmwM_;
+        }
     }
 
 ############# V3 Baseline
