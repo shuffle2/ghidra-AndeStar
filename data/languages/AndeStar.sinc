@@ -99,7 +99,7 @@ define bitrange
 #@define PSW.PNP     "PSW[22,1]"
 
 # ghidra state
-define register offset=0x110 size=4 [bi_addr IFC_ON];
+define register offset=0x110 size=4 [mult_addr bi_addr IFC_ON];
 
 # valid if isa=0
 define token instr32(32) endian=big
@@ -176,6 +176,23 @@ define token instr32(32) endian=big
     u0_5    =   (0,5)
     u5_7    =   (5,7)
     u5_5    =   (5,5)
+
+    OpSz=(31,31)
+    Opc=(25,30)
+
+    LsmwRa = (15, 19)
+    LsmwRb = (20, 24)
+    LsmwRe = (10, 14)
+    Enable4 = (6, 9)
+    Enable4_fp = (9, 9)
+    Enable4_gp = (8, 8)
+    Enable4_lp = (7, 7)
+    Enable4_sp = (6, 6)
+    LsmwLs = (5, 5)
+    LsmwBa = (4, 4)
+    LsmwId = (3, 3)
+    LsmwM = (2, 2)
+    LsmwSub = (0, 1)
 ;
 
 # valid if isa_s=1
@@ -223,6 +240,7 @@ define token instr16(16) endian=big
 attach variables [
     u20_24 u15_19 u10_14 u5_9
     R5_5_9 R5_0_4
+    LsmwRa LsmwRb LsmwRe
 ] [
     a0 a1 a2 a3 a4 a5
     s0 s1 s2 s3 s4 s5 s6 s7 s8
@@ -329,6 +347,26 @@ macro set_link_gpr(gpr, target) {
         gpr = IFC_LP;
     <fi>
 }
+
+@define I32     "(OpSz=0)"
+@define ALU_1   "(Opc=0b100000)"
+@define ALU_2   "(Opc=0b100001)"
+@define ALU2Z   "(Alu2Mod=0b0000)"
+@define GPR     "(Alu2Mod=0b0001)"
+@define BR1     "(Opc=0b100110)"
+@define BR2     "(Opc=0b100111)"
+@define BR3     "(Opc=0b101101)"
+@define LSMW    "(Opc=0b011101)"
+@define JI      "(Opc=0b100100)"
+@define MEM     "(Opc=0b011100)"
+@define MISC    "(Opc=0b110010)"
+@define JREG    "(Opc=0b100101)"
+@define SBGP    "(Opc=0b011111)"
+@define LBGP    "(Opc=0b010111)"
+@define HWGP    "(Opc=0b011110)"
+@define SIMD    "(Opc=0b111000)"
+
+@include "lsmw.sinc"
 
 with : isa=0 {
     # ALU_1
@@ -609,38 +647,28 @@ with : isa=0 {
     }
     # LSMW
     with : opc=0b011101 {
-        # the register range is INCLUSIVE: [Rb,Re].
-        # assumed that Rb <= Re
-        # assumed that Rb and Re are in range [0,28)
-        # Rb=Re=31 seems to mean zero-sized range
-        # if zero-sized range, enable4 should be nonzero
-        # i lost patience trying to do this in sleigh so it's implemented via CALLOTHER pcode injection
-        # TODO maybe use autogen idea like https://github.com/xyzz/ghidra-rl78/blob/master/data/languages/rl78.slaspec.in#L149 instead of pcode injection...
-        # see https://github.com/NationalSecurityAgency/ghidra/pull/1778/files
-        mw_wb_disp: squash reg_size disp is u10_14i & u20_24i & lmw_fp & lmw_gp & lmw_lp & lmw_sp & lmw3 [
-            # squash = (u20_24i == 31) ? 0 : 1
-            squash = 1 ^ (((u20_24i >> 4) & 1) & ((u20_24i >> 3) & 1) & ((u20_24i >> 2) & 1) & ((u20_24i >> 1) & 1) & (u20_24i & 1));
-            reg_size = ((squash * (u10_14i - u20_24i + 1)) + lmw_fp + lmw_gp + lmw_lp + lmw_sp) * 4;
-            # mul by {inc:1,dec:-1}
-            disp = reg_size * (((lmw3^1) << 1) - 1);
-        ] {
-            export *[const]:4 disp;
+        LsmwBa_: "b" is LsmwBa=0 { }
+        LsmwBa_: "a" is LsmwBa=1 { }
+
+        LsmwId_: "i" is LsmwId=0 { }
+        LsmwId_: "d" is LsmwId=1 { }
+
+        LsmwM_: ""  is LsmwRa & LsmwM=0 { }
+        LsmwM_: "m" is LsmwRa & LsmwM=1 { LsmwRa = mult_addr; }
+
+
+        :LMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is $(I32) & $(LSMW) & LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=0 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Lmw.regs
+        {
+            mult_addr = LsmwRa;
+            build Lmw.regs;
+            build LsmwM_;
         }
-        :LMW.^lmw4^lmw3^lmw2 u20_24, [u15_19], u10_14, u6_9 is u20_24 & u20_24i & u15_19 & u10_14 & u10_14i & u6_9 & lmw5=0 & lmw4 & lmw3 & lmw2 & lmw2=0 & u0_1=0b00 {
-            lmw(u20_24i:1, u15_19, u10_14i:1, u6_9:1, lmw4:1, lmw3:1, lmw2:1);
-        }
-        :LMW.^lmw4^lmw3^lmw2 u20_24, [u15_19], u10_14, u6_9 is u20_24 & u20_24i & u15_19 & u10_14 & u10_14i & u6_9 & lmw5=0 & lmw4 & lmw3 & lmw2 & lmw2=1 & u0_1=0b00 & mw_wb_disp {
-            lmw(u20_24i:1, u15_19, u10_14i:1, u6_9:1, lmw4:1, lmw3:1, lmw2:1);
-            build mw_wb_disp;
-            u15_19 = u15_19 + mw_wb_disp;
-        }
-        :SMW.^lmw4^lmw3^lmw2 u20_24, [u15_19], u10_14, u6_9 is u20_24 & u20_24i & u15_19 & u10_14 & u10_14i & u6_9 & lmw5=1 & lmw4 & lmw3 & lmw2 & lmw2=0 & u0_1=0b00 {
-            smw(u20_24i:1, u15_19, u10_14i:1, u6_9:1, lmw4:1, lmw3:1, lmw2:1);
-        }
-        :SMW.^lmw4^lmw3^lmw2 u20_24, [u15_19], u10_14, u6_9 is u20_24 & u20_24i & u15_19 & u10_14 & u10_14i & u6_9 & lmw5=1 & lmw4 & lmw3 & lmw2 & lmw2=1 & u0_1=0b00 & mw_wb_disp {
-            smw(u20_24i:1, u15_19, u10_14i:1, u6_9:1, lmw4:1, lmw3:1, lmw2:1);
-            build mw_wb_disp;
-            u15_19 = u15_19 + mw_wb_disp;
+
+        :SMW.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is $(I32) & $(LSMW) & LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=1 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b00 & Smw.regs
+        {
+            mult_addr = LsmwRa;
+            build Smw.regs;
+            build LsmwM_;
         }
     }
 
