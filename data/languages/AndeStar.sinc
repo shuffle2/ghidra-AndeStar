@@ -1066,109 +1066,53 @@ with : isa_s=1 {
     imm6u_5: imm is imm5u [imm = imm5u + 16;] { export *[const]:4 imm; }
     :MOVPI45 R4_5_8, imm6u_5  is op9_14=0b111101 & R4_5_8 & imm6u_5 { R4_5_8 = imm6u_5; }
 
-    # Specialize all forms of PUSH25/POP25. there's only 4 cases each...
-    # show arm-like register list (deviates from assembler spec / should probably change so ghidra UI highlights regs properly)
-    # XXX the processor writes registers to memory in ascending order. This impl descends to simplify logic.
     macro push_reg(ri) {
         sp = sp - 4;
         *:4 sp = ri;
     }
-    macro push25_prologue() {
-        push_reg(lp);
-        push_reg(gp);
-        push_reg(fp);
-    }
-    macro push25_epilog_0(imm8u_5) {
-        push_reg(s0);
-        sp = sp - imm8u_5;
-    }
-    macro push25_epilog_2(imm8u_5) {
+    macro push25_epilog_0() { push_reg(s0); }
+    macro push25_epilog_2() {
         push_reg(s2);
         push_reg(s1);
-        push25_epilog_0(imm8u_5);
+        push25_epilog_0();
         # store function entry point in r8
         # only implicitly used by LWI45.FE
         # NOT done for Re == 0
-        s2 = inst_start & ~0b11;
+        s2 = inst_start & 0xfffffffc;
     }
-    macro push25_epilog_4(imm8u_5) {
-        push_reg(s4);
-        push_reg(s3);
-        push25_epilog_2(imm8u_5);
-    }
-    macro push25_epilog_8(imm8u_5) {
-        push_reg(s8);
-        push_reg(s7);
-        push_reg(s6);
-        push_reg(s5);
-        push25_epilog_4(imm8u_5);
-    }
-    :PUSH25 "{s0,fp,gp,lp}", imm8u_5    is op7_14=0b11111000 & R2_5_6=0b00 & imm8u_5 {
-        push25_prologue();
-        push25_epilog_0(imm8u_5);
-    }
-    :PUSH25 "{s0-s2,fp,gp,lp}", imm8u_5 is op7_14=0b11111000 & R2_5_6=0b01 & imm8u_5 {
-        push25_prologue();
-        push25_epilog_2(imm8u_5);
-    }
-    :PUSH25 "{s0-s4,fp,gp,lp}", imm8u_5 is op7_14=0b11111000 & R2_5_6=0b10 & imm8u_5 {
-        push25_prologue();
-        push25_epilog_4(imm8u_5);
-    }
-    :PUSH25 "{s0-s8,fp,gp,lp}", imm8u_5 is op7_14=0b11111000 & R2_5_6=0b11 & imm8u_5 {
-        push25_prologue();
-        push25_epilog_8(imm8u_5);
+    macro push25_epilog_4() { push_reg(s4); push_reg(s3); push25_epilog_2(); }
+    macro push25_epilog_8() { push_reg(s8); push_reg(s7); push_reg(s6); push_reg(s5); push25_epilog_4(); }
+    push25_re: R2_5_6 is R2_5_6 & R2_5_6=0 { push25_epilog_0(); }
+    push25_re: R2_5_6 is R2_5_6 & R2_5_6=1 { push25_epilog_2(); }
+    push25_re: R2_5_6 is R2_5_6 & R2_5_6=2 { push25_epilog_4(); }
+    push25_re: R2_5_6 is R2_5_6 & R2_5_6=3 { push25_epilog_8(); }
+    :PUSH25 push25_re, imm8u_5    is op7_14=0b11111000 & push25_re & imm8u_5 {
+        push_reg(lp);
+        push_reg(gp);
+        push_reg(fp);
+        build push25_re;
+        sp = sp - imm8u_5;
     }
     macro pop_reg(ri) {
         ri = *:4 sp;
         sp = sp + 4;
     }
-    macro pop25_prologue_0() {
-        pop_reg(s0);
-    }
-    macro pop25_prologue_2() {
-        pop25_prologue_0();
-        pop_reg(s1);
-        pop_reg(s2);
-    }
-    macro pop25_prologue_4() {
-        pop25_prologue_2();
-        pop_reg(s3);
-        pop_reg(s4);
-    }
-    macro pop25_prologue_8() {
-        pop25_prologue_4();
-        pop_reg(s5);
-        pop_reg(s6);
-        pop_reg(s7);
-        pop_reg(s8);
-    }
-    macro pop25_epilogue() {
+    macro pop25_prologue_0() { pop_reg(s0); }
+    macro pop25_prologue_2() { pop25_prologue_0(); pop_reg(s1); pop_reg(s2); }
+    macro pop25_prologue_4() { pop25_prologue_2(); pop_reg(s3); pop_reg(s4); }
+    macro pop25_prologue_8() { pop25_prologue_4(); pop_reg(s5); pop_reg(s6); pop_reg(s7); pop_reg(s8); }
+    pop25_re: R2_5_6 is R2_5_6 & R2_5_6=0 { pop25_prologue_0(); }
+    pop25_re: R2_5_6 is R2_5_6 & R2_5_6=1 { pop25_prologue_2(); }
+    pop25_re: R2_5_6 is R2_5_6 & R2_5_6=2 { pop25_prologue_4(); }
+    pop25_re: R2_5_6 is R2_5_6 & R2_5_6=3 { pop25_prologue_8(); }
+    :POP25  pop25_re, imm8u_5    is op7_14=0b11111001 & pop25_re & imm8u_5 {
+        sp = sp + imm8u_5;
+        build pop25_re;
         pop_reg(fp);
         pop_reg(gp);
         pop_reg(lp);
         psw_ifcon_clear();
         return [lp];
-    }
-    :POP25  "{s0,fp,gp,lp}", imm8u_5    is op7_14=0b11111001 & R2_5_6=0b00 & imm8u_5 {
-        sp = sp + imm8u_5;
-        pop25_prologue_0();
-        pop25_epilogue();
-    }
-    :POP25  "{s0-s2,fp,gp,lp}", imm8u_5 is op7_14=0b11111001 & R2_5_6=0b01 & imm8u_5 {
-        sp = sp + imm8u_5;
-        pop25_prologue_2();
-        pop25_epilogue();
-    }
-    :POP25  "{s0-s4,fp,gp,lp}", imm8u_5 is op7_14=0b11111001 & R2_5_6=0b10 & imm8u_5 {
-        sp = sp + imm8u_5;
-        pop25_prologue_4();
-        pop25_epilogue();
-    }
-    :POP25  "{s0-s8,fp,gp,lp}", imm8u_5 is op7_14=0b11111001 & R2_5_6=0b11 & imm8u_5 {
-        sp = sp + imm8u_5;
-        pop25_prologue_8();
-        pop25_epilogue();
     }
 
 ########## EX9IT Extension
