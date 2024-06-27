@@ -356,8 +356,6 @@ define pcodeop dsb;
 define pcodeop isb;
 define pcodeop msync;
 define pcodeop isync;
-define pcodeop mfsr;
-define pcodeop mtsr;
 define pcodeop setend;
 define pcodeop setgie;
 define pcodeop standby;
