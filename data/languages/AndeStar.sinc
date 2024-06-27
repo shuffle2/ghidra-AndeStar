@@ -356,6 +356,7 @@ define pcodeop dsb;
 define pcodeop isb;
 define pcodeop msync;
 define pcodeop isync;
+define pcodeop Unknown_SR;
 define pcodeop setend;
 define pcodeop setgie;
 define pcodeop standby;
@@ -828,11 +829,10 @@ with : $(I32) {
           sridx: DMA_RCNT     is DMA_RCNT     & SrMin=7 & SrExt=1 { export DMA_RCNT; }
           sridx: DMA_HSTATUS  is DMA_HSTATUS  & SrMin=8 & SrExt=1 { export DMA_HSTATUS; }
         }
+        # This is workaround for bug in sleigh compiler: https://github.com/NationalSecurityAgency/ghidra/issues/6676
+        sridx: (SrMaj, SrMin, SrExt) is SrMaj & SrMin & SrExt { dummy:4 = Unknown_SR(SrMaj:1, SrMin:1, SrExt:1); export dummy; }
         :MFSR u20_24, sridx is u20_24 & sridx & u5_9i=0 & subop=0b00010 { u20_24 = sridx; }
-        # TODO this hits bug in sleigh compiler: https://github.com/NationalSecurityAgency/ghidra/issues/6676
-        #:MFSR u20_24, (SrMaj, SrMin, SrExt) is u20_24 & SrMaj & SrMin & SrExt & u5_9i=0 & subop=0b00010 unimpl
         :MTSR u20_24, sridx is u20_24 & sridx & u5_9i=0 & subop=0b00011 { sridx = u20_24; }
-        #:MTSR u20_24, (SrMaj, SrMin, SrExt) is u20_24 & SrMaj & SrMin & SrExt & u5_9i=0 & subop=0b00011 unimpl
 
         :SETEND.^setend20 is u21_24=0 & setend20 & u10_19=0b0010000000 & u5_9i=0b00001 & subop=0b00011 { setend(setend20:1); }
         :SETGIE.^setgie20 is u21_24=0 & setgie20 & u10_19=0b0010000000 & u5_9i=0b00010 & subop=0b00011 { setgie(setgie20:1); }
