@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <language_definitions>
-    <language processor="AndeStar"
+
+<!--TODO get rid of these-->
+<language processor="AndeStar"
               endian="little"
               size="32"
               variant="LEData"
@@ -21,6 +23,32 @@
               processorspec="AndeStar.pspec"
               id="AndeStar:BEData">
         <description>AndeStar (default to big endian data access)</description>
+        <compiler name="default" spec="AndeStar.cspec" id="default"/>
+    </language>
+
+
+    <language processor="AndeStar"
+              endian="little"
+              instructionEndian="big"
+              size="32"
+              variant="V3"
+              version="1.0"
+              slafile="AndeStar_le.sla"
+              processorspec="AndeStar.pspec"
+              id="AndeStar:LEData:32:V3">
+        <description>AndeStar V3 (default to little endian data access)</description>
+        <compiler name="default" spec="AndeStar.cspec" id="default"/>
+    </language>
+    <language processor="AndeStar"
+              endian="big"
+              instructionEndian="big"
+              size="32"
+              variant="V3"
+              version="1.0"
+              slafile="AndeStar_be.sla"
+              processorspec="AndeStar.pspec"
+              id="AndeStar:BEData:32:V3">
+        <description>AndeStar V3 (default to big endian data access)</description>
         <compiler name="default" spec="AndeStar.cspec" id="default"/>
     </language>
 </language_definitions>
