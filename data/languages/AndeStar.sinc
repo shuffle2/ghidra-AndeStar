@@ -24,20 +24,49 @@ define register offset=0x80 size=4 [
     LB LE LC
     ITB IFC_LP PC
 
-    # Group 1
-    DMA_CFG DMA_GCSW DMA_CHNSEL DMA_ACT DMA_SETUP DMA_ISADDR DMA_ESADDR DMA_TCNT DMA_STATUS DMA_2DSET
-    DMA_2DSCTL
-
-    # Group 2
-    PFMC0 PFMC1 PFMC2
-    PFM_CTL
+    # Group 1,2 are views into SRs
 ];
 
-# TODO implement SRs. hacky impl for IRET for now
 # SR Encoding is 10bits. 3 Major, 4 Minor, 3 Extension
 # PSW = ir0 (1, 0, 0)
 # IPC = ir9 (1, 0, 1)
-define register offset=0x100 size=4 [PSW IPC];
+define register offset=0x100 size=4 [
+  # Major 0: Configuration
+  CPU_VER ICM_CFG DCM_CFG MMU_CFG MSC_CFG MSC_CFG2 CORE_ID FUCOP_EXIST
+
+  # Major 1: Interruption
+  PSW IPSW P_IPSW IVB EVA P_EVA ITYPE P_ITYPE MERR IPC P_IPC OIPC
+  P_P0 P_P1 INT_MASK INT_PEND SP_USR SP_PRIV INT_PRI INT_CTRL
+  INT_MASK2 INT_PEND2 INT_PRI2 INT_TRIGGER
+
+  # Major 2: MMU
+  MMU_CTL L1_PPTB TLB_VPN TLB_DATA TLB_MISC VLPT_IDX ILMB DLMB CACHE_CTL HSMP_SADDR
+
+  # Major 2, Minor 15: Implementation-Dependent
+  SDZ_CTL MISC_CTL ECC_MISC
+
+  # Major 3: Embedded Debug Mode
+  BPC0 BPC1 BPC2 BPC3 BPC4 BPC5 BPC6 BPC7
+  BPA0 BPA1 BPA2 BPA3 BPA4 BPA5 BPA6 BPA7
+  BPAM0 BPAM1 BPAM2 BPAM3 BPAM4 BPAM5 BPAM6 BPAM7
+  BPV0 BPV1 BPV2 BPV3 BPV4 BPV5 BPV6 BPV7
+  BPCID0 BPCID1 BPCID2 BPCID3 BPCID4 BPCID5 BPCID6 BPCID7
+  EDM_CFG EDMSW EDM_CTL EDM_DTR BPMTC DIMBR TECR0 TECR1
+
+  # Major 4: Performance Monitoring
+  PFMC0 PFMC1 PFMC2
+  PFM_CTL PFT_CTL
+
+  # Major 4, Minor 4,5: Resource Access Control
+  PRUSR_ACC_CTL FUCOP_CTL
+
+  # Major 4, Minor 6: Hardware Stack Protection
+  HSP_CTL SP_BOUND SP_BOUND_PRIV SP_BASE SP_BASE_PRIV
+
+  # Major 5: Local Memory DMA
+  DMA_CFG DMA_GCSW DMA_CHNSEL DMA_ACT DMA_SETUP DMA_ISADDR DMA_ESADDR DMA_TCNT
+  DMA_STATUS DMA_2DSET DMA_2DSCTL DMA_RCNT DMA_HSTATUS
+];
 # seen SRs
 # 0x008  (0, 1, 0)    ICM_CFG
 # 0x010  (0, 2, 0)    DCM_CFG
@@ -99,7 +128,7 @@ define bitrange
 #@define PSW.PNP     "PSW[22,1]"
 
 # ghidra state
-define register offset=0x110 size=4 [mult_addr bi_addr IFC_ON];
+define register offset=0x1000 size=4 [mult_addr bi_addr IFC_ON];
 
 # valid if isa=0
 define token instr32(32) endian=big
@@ -197,6 +226,10 @@ define token instr32(32) endian=big
 
     MsyncZ      = (8, 19)
     MsyncSub    = (5, 7)
+
+    SrMaj=(17,19)
+    SrMin=(13,16)
+    SrExt=(10,12)
 
     TlbopSub    = (5, 9)
 
@@ -492,34 +525,40 @@ with : $(I32) {
             dthi21 = Ra s% Rb;
         }
 
-        USR_Name: d0.hi         is d0.hi    & u10_14i=0 & u15_19i=0 { export d0.hi; }
-        USR_Name: d0.lo         is d0.lo    & u10_14i=0 & u15_19i=1 { export d0.lo; }
-        USR_Name: d1.hi         is d1.hi    & u10_14i=0 & u15_19i=2 { export d1.hi; }
-        USR_Name: d1.lo         is d1.lo    & u10_14i=0 & u15_19i=3 { export d1.lo; }
-        # ZOL Extension
-        USR_Name: LB            is LB       & u10_14i=0 & u15_19i=25 { export LB; }
-        USR_Name: LE            is LE       & u10_14i=0 & u15_19i=26 { export LE; }
-        USR_Name: LC            is LC       & u10_14i=0 & u15_19i=27 { export LC; }
-        # EX9.IT Extension
-        USR_Name: ITB           is ITB      & u10_14i=0 & u15_19i=28 { export ITB; }
-        # IFC Extension?
-        USR_Name: IFC_LP        is IFC_LP   & u10_14i=0 & u15_19i=29 { export IFC_LP; }
-        USR_Name: PC            is PC       & u10_14i=0 & u15_19i=31 { export PC; }
-        USR_Name: DMA_CFG       is DMA_CFG      & u10_14i=1 & u15_19i=0 { export DMA_CFG; }
-        USR_Name: DMA_GCSW      is DMA_GCSW     & u10_14i=1 & u15_19i=1 { export DMA_GCSW; }
-        USR_Name: DMA_CHNSEL    is DMA_CHNSEL   & u10_14i=1 & u15_19i=2 { export DMA_CHNSEL; }
-        USR_Name: DMA_ACT       is DMA_ACT      & u10_14i=1 & u15_19i=3 { export DMA_ACT; }
-        USR_Name: DMA_SETUP     is DMA_SETUP    & u10_14i=1 & u15_19i=4 { export DMA_SETUP; }
-        USR_Name: DMA_ISADDR    is DMA_ISADDR   & u10_14i=1 & u15_19i=5 { export DMA_ISADDR; }
-        USR_Name: DMA_ESADDR    is DMA_ESADDR   & u10_14i=1 & u15_19i=6 { export DMA_ESADDR; }
-        USR_Name: DMA_TCNT      is DMA_TCNT     & u10_14i=1 & u15_19i=7 { export DMA_TCNT; }
-        USR_Name: DMA_STATUS    is DMA_STATUS   & u10_14i=1 & u15_19i=8 { export DMA_STATUS; }
-        USR_Name: DMA_2DSET     is DMA_2DSET    & u10_14i=1 & u15_19i=9 { export DMA_2DSET; }
-        USR_Name: DMA_2DSCTL    is DMA_2DSCTL   & u10_14i=1 & u15_19i=25 { export DMA_2DSCTL; }
-        USR_Name: PFMC0    is PFMC0   & u10_14i=2 & u15_19i=0 { export PFMC0; }
-        USR_Name: PFMC1    is PFMC1   & u10_14i=2 & u15_19i=1 { export PFMC1; }
-        USR_Name: PFMC2    is PFMC2   & u10_14i=2 & u15_19i=2 { export PFMC2; }
-        USR_Name: PFM_CTL  is PFM_CTL & u10_14i=2 & u15_19i=4 { export PFM_CTL; }
+        with : u10_14i=0 {
+          USR_Name: d0.hi   is d0.hi  & u15_19i=0 { export d0.hi; }
+          USR_Name: d0.lo   is d0.lo  & u15_19i=1 { export d0.lo; }
+          USR_Name: d1.hi   is d1.hi  & u15_19i=2 { export d1.hi; }
+          USR_Name: d1.lo   is d1.lo  & u15_19i=3 { export d1.lo; }
+          # ZOL Extension (DSP)
+          USR_Name: LB      is LB     & u15_19i=25 { export LB; }
+          USR_Name: LE      is LE     & u15_19i=26 { export LE; }
+          USR_Name: LC      is LC     & u15_19i=27 { export LC; }
+          # EX9.IT Extension
+          USR_Name: ITB     is ITB    & u15_19i=28 { export ITB; }
+          # IFC Extension (DSP)
+          USR_Name: IFC_LP  is IFC_LP & u15_19i=29 { export IFC_LP; }
+          USR_Name: PC      is PC     & u15_19i=31 { export PC; }
+        }
+        with : u10_14i=1 {
+          USR_Name: DMA_CFG     is DMA_CFG    & u15_19i=0 { export DMA_CFG; }
+          USR_Name: DMA_GCSW    is DMA_GCSW   & u15_19i=1 { export DMA_GCSW; }
+          USR_Name: DMA_CHNSEL  is DMA_CHNSEL & u15_19i=2 { export DMA_CHNSEL; }
+          USR_Name: DMA_ACT     is DMA_ACT    & u15_19i=3 { export DMA_ACT; }
+          USR_Name: DMA_SETUP   is DMA_SETUP  & u15_19i=4 { export DMA_SETUP; }
+          USR_Name: DMA_ISADDR  is DMA_ISADDR & u15_19i=5 { export DMA_ISADDR; }
+          USR_Name: DMA_ESADDR  is DMA_ESADDR & u15_19i=6 { export DMA_ESADDR; }
+          USR_Name: DMA_TCNT    is DMA_TCNT   & u15_19i=7 { export DMA_TCNT; }
+          USR_Name: DMA_STATUS  is DMA_STATUS & u15_19i=8 { export DMA_STATUS; }
+          USR_Name: DMA_2DSET   is DMA_2DSET  & u15_19i=9 { export DMA_2DSET; }
+          USR_Name: DMA_2DSCTL  is DMA_2DSCTL & u15_19i=25 { export DMA_2DSCTL; }
+        }
+        with : u10_14i=2 {
+          USR_Name: PFMC0   is PFMC0   & u15_19i=0 { export PFMC0; }
+          USR_Name: PFMC1   is PFMC1   & u15_19i=1 { export PFMC1; }
+          USR_Name: PFMC2   is PFMC2   & u15_19i=2 { export PFMC2; }
+          USR_Name: PFM_CTL is PFM_CTL & u15_19i=4 { export PFM_CTL; }
+        }
         :MFUSR u20_24, USR_Name is u20_24 & USR_Name & u6_9=0 & subop0_5=0b100000 { u20_24 = USR_Name; }
         :MFUSR u20_24, (= u15_19i, u10_14i) is u20_24 & u15_19i & u10_14i & u6_9=0 & subop0_5=0b100000 unimpl
         :MTUSR u20_24, USR_Name is u20_24 & USR_Name & u6_9=0 & subop0_5=0b100001 { USR_Name = u20_24; }
@@ -637,7 +676,9 @@ with : $(I32) {
     with : $(MISC) {
         # Generate_Exception
         :BREAK   u5_19 is u20_24=0 & u5_19 & subop=0b01010 { Exception_Breakpoint(u5_19:2); }
+
         :SYSCALL u5_19 is u20_24=0 & u5_19 & subop=0b01011 { Exception_System_Call(u5_19:2); }
+
         :TRAP    u5_19 is u20_24=0 & u5_19 & subop=0b00101 { Exception_Trap(u5_19:2); }
         :TEQZ    u20_24, u5_19 is u20_24 & u5_19 & subop=0b00110 {
             if (!(u20_24 == 0)) goto inst_next;
@@ -652,15 +693,152 @@ with : $(I32) {
         :CCTL u20_24, u15_19, u5_9i, u10_10 is u20_24 & u15_19 & u11_14=0 & u10_10 & u5_9i & subop=0b00001 {
             cctl(u20_24:1, u15_19:1, u5_9i:1, u10_10:1);
         }
+
         :DSB is u20_24=0 & u5_19=0 & subop=0b01000 { dsb(); }
         :ISB is u20_24=0 & u5_19=0 & subop=0b01001 { isb(); }
+
         :MSYNC MsyncSub is u20_24=0 & MsyncZ=0 & MsyncSub & subop=0b01100 { msync(MsyncSub:1); }
         :ISYNC u20_24 is u20_24 & u5_19=0 & subop=0b01101 { isync(u20_24:1); }
+
         :IRET is u20_24=0 & u5_19=0 & subop=0b00100 { return [IPC]; }
-        :MFSR u20_24, u10_19 is u20_24 & u10_19 & u5_9i=0 & subop=0b00010 { u20_24 = mfsr(u10_19:3); }
-        :MTSR u20_24, u10_19 is u20_24 & u10_19 & u5_9i=0 & subop=0b00011 { mtsr(u20_24:4, u10_19:3); }
+
+        with : SrMaj=0 {
+          sridx: CPU_VER      is CPU_VER      & SrMin=0 & SrExt=0 { export CPU_VER; }
+          sridx: ICM_CFG      is ICM_CFG      & SrMin=1 & SrExt=0 { export ICM_CFG; }
+          sridx: DCM_CFG      is DCM_CFG      & SrMin=2 & SrExt=0 { export DCM_CFG; }
+          sridx: MMU_CFG      is MMU_CFG      & SrMin=3 & SrExt=0 { export MMU_CFG; }
+          sridx: MSC_CFG      is MSC_CFG      & SrMin=4 & SrExt=0 { export MSC_CFG; }
+          sridx: MSC_CFG2     is MSC_CFG2     & SrMin=4 & SrExt=1 { export MSC_CFG2; }
+          sridx: CORE_ID      is CORE_ID      & SrMin=0 & SrExt=1 { export CORE_ID; }
+          sridx: FUCOP_EXIST  is FUCOP_EXIST  & SrMin=5 & SrExt=0 { export FUCOP_EXIST; }
+        }
+        with : SrMaj=1 {
+          sridx: PSW          is PSW           & SrMin=0  & SrExt=0 { export PSW; }
+          sridx: IPSW         is IPSW          & SrMin=0  & SrExt=1 { export IPSW; }
+          sridx: P_IPSW       is P_IPSW        & SrMin=0  & SrExt=2 { export P_IPSW; }
+          sridx: IVB          is IVB           & SrMin=1  & SrExt=1 { export IVB; }
+          sridx: EVA          is EVA           & SrMin=2  & SrExt=1 { export EVA; }
+          sridx: P_EVA        is P_EVA         & SrMin=2  & SrExt=2 { export P_EVA; }
+          sridx: ITYPE        is ITYPE         & SrMin=3  & SrExt=1 { export ITYPE; }
+          sridx: P_ITYPE      is P_ITYPE       & SrMin=3  & SrExt=2 { export P_ITYPE; }
+          sridx: MERR         is MERR          & SrMin=4  & SrExt=1 { export MERR; }
+          sridx: IPC          is IPC           & SrMin=5  & SrExt=1 { export IPC; }
+          sridx: P_IPC        is P_IPC         & SrMin=5  & SrExt=2 { export P_IPC; }
+          sridx: OIPC         is OIPC          & SrMin=5  & SrExt=3 { export OIPC; }
+          sridx: P_P0         is P_P0          & SrMin=6  & SrExt=2 { export P_P0; }
+          sridx: P_P1         is P_P1          & SrMin=7  & SrExt=2 { export P_P1; }
+          sridx: INT_MASK     is INT_MASK      & SrMin=8  & SrExt=0 { export INT_MASK; }
+          sridx: INT_PEND     is INT_PEND      & SrMin=9  & SrExt=0 { export INT_PEND; }
+          sridx: SP_USR       is SP_USR        & SrMin=10 & SrExt=0 { export SP_USR; }
+          sridx: SP_PRIV      is SP_PRIV       & SrMin=10 & SrExt=1 { export SP_PRIV; }
+          sridx: INT_PRI      is INT_PRI       & SrMin=11 & SrExt=0 { export INT_PRI; }
+          sridx: INT_CTRL     is INT_CTRL      & SrMin=1  & SrExt=2 { export INT_CTRL; }
+          sridx: INT_MASK2    is INT_MASK2     & SrMin=8  & SrExt=1 { export INT_MASK2; }
+          sridx: INT_PEND2    is INT_PEND2     & SrMin=9  & SrExt=1 { export INT_PEND2; }
+          sridx: INT_PRI2     is INT_PRI2      & SrMin=11 & SrExt=1 { export INT_PRI2; }
+          sridx: INT_TRIGGER  is INT_TRIGGER   & SrMin=9  & SrExt=4 { export INT_TRIGGER; }
+        }
+        with : SrMaj=2 & SrExt=0 {
+          sridx: MMU_CTL    is MMU_CTL    & SrMin=0 { export MMU_CTL; }
+          sridx: L1_PPTB    is L1_PPTB    & SrMin=1 { export L1_PPTB; }
+          sridx: TLB_VPN    is TLB_VPN    & SrMin=2 { export TLB_VPN; }
+          sridx: TLB_DATA   is TLB_DATA   & SrMin=3 { export TLB_DATA; }
+          sridx: TLB_MISC   is TLB_MISC   & SrMin=4 { export TLB_MISC; }
+          sridx: VLPT_IDX   is VLPT_IDX   & SrMin=5 { export VLPT_IDX; }
+          sridx: ILMB       is ILMB       & SrMin=6 { export ILMB; }
+          sridx: DLMB       is DLMB       & SrMin=7 { export DLMB; }
+          sridx: CACHE_CTL  is CACHE_CTL  & SrMin=8 { export CACHE_CTL; }
+          sridx: HSMP_SADDR is HSMP_SADDR & SrMin=9 { export HSMP_SADDR; }
+        }
+        with : SrMaj=2 & SrMin=15 {
+          sridx: SDZ_CTL  is SDZ_CTL  & SrExt=0 { export SDZ_CTL; }
+          sridx: MISC_CTL is MISC_CTL & SrExt=1 { export MISC_CTL; }
+          sridx: ECC_MISC is ECC_MISC & SrExt=2 { export ECC_MISC; }
+        }
+        with : SrMaj=3 {
+          sridx: BPC0     is BPC0     & SrMin=0  & SrExt=0 { export BPC0; }
+          sridx: BPC1     is BPC1     & SrMin=0  & SrExt=1 { export BPC1; }
+          sridx: BPC2     is BPC2     & SrMin=0  & SrExt=2 { export BPC2; }
+          sridx: BPC3     is BPC3     & SrMin=0  & SrExt=3 { export BPC3; }
+          sridx: BPC4     is BPC4     & SrMin=0  & SrExt=4 { export BPC4; }
+          sridx: BPC5     is BPC5     & SrMin=0  & SrExt=5 { export BPC5; }
+          sridx: BPC6     is BPC6     & SrMin=0  & SrExt=6 { export BPC6; }
+          sridx: BPC7     is BPC7     & SrMin=0  & SrExt=7 { export BPC7; }
+          sridx: BPA0     is BPA0     & SrMin=1  & SrExt=0 { export BPA0; }
+          sridx: BPA1     is BPA1     & SrMin=1  & SrExt=1 { export BPA1; }
+          sridx: BPA2     is BPA2     & SrMin=1  & SrExt=2 { export BPA2; }
+          sridx: BPA3     is BPA3     & SrMin=1  & SrExt=3 { export BPA3; }
+          sridx: BPA4     is BPA4     & SrMin=1  & SrExt=4 { export BPA4; }
+          sridx: BPA5     is BPA5     & SrMin=1  & SrExt=5 { export BPA5; }
+          sridx: BPA6     is BPA6     & SrMin=1  & SrExt=6 { export BPA6; }
+          sridx: BPA7     is BPA7     & SrMin=1  & SrExt=7 { export BPA7; }
+          sridx: BPAM0    is BPAM0    & SrMin=2  & SrExt=0 { export BPAM0; }
+          sridx: BPAM1    is BPAM1    & SrMin=2  & SrExt=1 { export BPAM1; }
+          sridx: BPAM2    is BPAM2    & SrMin=2  & SrExt=2 { export BPAM2; }
+          sridx: BPAM3    is BPAM3    & SrMin=2  & SrExt=3 { export BPAM3; }
+          sridx: BPAM4    is BPAM4    & SrMin=2  & SrExt=4 { export BPAM4; }
+          sridx: BPAM5    is BPAM5    & SrMin=2  & SrExt=5 { export BPAM5; }
+          sridx: BPAM6    is BPAM6    & SrMin=2  & SrExt=6 { export BPAM6; }
+          sridx: BPAM7    is BPAM7    & SrMin=2  & SrExt=7 { export BPAM7; }
+          sridx: BPV0     is BPV0     & SrMin=3  & SrExt=0 { export BPV0; }
+          sridx: BPV1     is BPV1     & SrMin=3  & SrExt=1 { export BPV1; }
+          sridx: BPV2     is BPV2     & SrMin=3  & SrExt=2 { export BPV2; }
+          sridx: BPV3     is BPV3     & SrMin=3  & SrExt=3 { export BPV3; }
+          sridx: BPV4     is BPV4     & SrMin=3  & SrExt=4 { export BPV4; }
+          sridx: BPV5     is BPV5     & SrMin=3  & SrExt=5 { export BPV5; }
+          sridx: BPV6     is BPV6     & SrMin=3  & SrExt=6 { export BPV6; }
+          sridx: BPV7     is BPV7     & SrMin=3  & SrExt=7 { export BPV7; }
+          sridx: BPCID0   is BPCID0   & SrMin=4  & SrExt=0 { export BPCID0; }
+          sridx: BPCID1   is BPCID1   & SrMin=4  & SrExt=1 { export BPCID1; }
+          sridx: BPCID2   is BPCID2   & SrMin=4  & SrExt=2 { export BPCID2; }
+          sridx: BPCID3   is BPCID3   & SrMin=4  & SrExt=3 { export BPCID3; }
+          sridx: BPCID4   is BPCID4   & SrMin=4  & SrExt=4 { export BPCID4; }
+          sridx: BPCID5   is BPCID5   & SrMin=4  & SrExt=5 { export BPCID5; }
+          sridx: BPCID6   is BPCID6   & SrMin=4  & SrExt=6 { export BPCID6; }
+          sridx: BPCID7   is BPCID7   & SrMin=4  & SrExt=7 { export BPCID7; }
+          sridx: EDM_CFG  is EDM_CFG  & SrMin=5  & SrExt=0 { export EDM_CFG; }
+          sridx: EDMSW    is EDMSW    & SrMin=6  & SrExt=0 { export EDMSW; }
+          sridx: EDM_CTL  is EDM_CTL  & SrMin=7  & SrExt=0 { export EDM_CTL; }
+          sridx: EDM_DTR  is EDM_DTR  & SrMin=8  & SrExt=0 { export EDM_DTR; }
+          sridx: BPMTC    is BPMTC    & SrMin=9  & SrExt=0 { export BPMTC; }
+          sridx: DIMBR    is DIMBR    & SrMin=10 & SrExt=0 { export DIMBR; }
+          sridx: TECR0    is TECR0    & SrMin=14 & SrExt=0 { export TECR0; }
+          sridx: TECR1    is TECR1    & SrMin=14 & SrExt=1 { export TECR1; }
+        }
+        with : SrMaj=4 {
+          sridx: PFMC0   is PFMC0   & SrMin=0 & SrExt=0 { export PFMC0; }
+          sridx: PFMC1   is PFMC1   & SrMin=0 & SrExt=1 { export PFMC1; }
+          sridx: PFMC2   is PFMC2   & SrMin=0 & SrExt=2 { export PFMC2; }
+          sridx: PFM_CTL is PFM_CTL & SrMin=1 & SrExt=0 { export PFM_CTL; }
+          sridx: PFT_CTL is PFT_CTL & SrMin=2 & SrExt=0 { export PFT_CTL; }
+
+          sridx: PRUSR_ACC_CTL  is PRUSR_ACC_CTL  & SrMin=4 & SrExt=0 { export PRUSR_ACC_CTL; }
+          sridx: FUCOP_CTL      is FUCOP_CTL      & SrMin=5 & SrExt=0 { export FUCOP_CTL; }
+        }
+        with : SrMaj=5 {
+          sridx: DMA_CFG      is DMA_CFG      & SrMin=0 & SrExt=0 { export DMA_CFG; }
+          sridx: DMA_GCSW     is DMA_GCSW     & SrMin=1 & SrExt=0 { export DMA_GCSW; }
+          sridx: DMA_CHNSEL   is DMA_CHNSEL   & SrMin=2 & SrExt=0 { export DMA_CHNSEL; }
+          sridx: DMA_ACT      is DMA_ACT      & SrMin=3 & SrExt=0 { export DMA_ACT; }
+          sridx: DMA_SETUP    is DMA_SETUP    & SrMin=4 & SrExt=0 { export DMA_SETUP; }
+          sridx: DMA_ISADDR   is DMA_ISADDR   & SrMin=5 & SrExt=0 { export DMA_ISADDR; }
+          sridx: DMA_ESADDR   is DMA_ESADDR   & SrMin=6 & SrExt=0 { export DMA_ESADDR; }
+          sridx: DMA_TCNT     is DMA_TCNT     & SrMin=7 & SrExt=0 { export DMA_TCNT; }
+          sridx: DMA_STATUS   is DMA_STATUS   & SrMin=8 & SrExt=0 { export DMA_STATUS; }
+          sridx: DMA_2DSET    is DMA_2DSET    & SrMin=9 & SrExt=0 { export DMA_2DSET; }
+          sridx: DMA_2DSCTL   is DMA_2DSCTL   & SrMin=9 & SrExt=1 { export DMA_2DSCTL; }
+          sridx: DMA_RCNT     is DMA_RCNT     & SrMin=7 & SrExt=1 { export DMA_RCNT; }
+          sridx: DMA_HSTATUS  is DMA_HSTATUS  & SrMin=8 & SrExt=1 { export DMA_HSTATUS; }
+        }
+        :MFSR u20_24, sridx is u20_24 & sridx & u5_9i=0 & subop=0b00010 { u20_24 = sridx; }
+        # TODO this hits bug in sleigh compiler: https://github.com/NationalSecurityAgency/ghidra/issues/6676
+        #:MFSR u20_24, (SrMaj, SrMin, SrExt) is u20_24 & SrMaj & SrMin & SrExt & u5_9i=0 & subop=0b00010 unimpl
+        :MTSR u20_24, sridx is u20_24 & sridx & u5_9i=0 & subop=0b00011 { sridx = u20_24; }
+        #:MTSR u20_24, (SrMaj, SrMin, SrExt) is u20_24 & SrMaj & SrMin & SrExt & u5_9i=0 & subop=0b00011 unimpl
+
         :SETEND.^setend20 is u21_24=0 & setend20 & u10_19=0b0010000000 & u5_9i=0b00001 & subop=0b00011 { setend(setend20:1); }
         :SETGIE.^setgie20 is u21_24=0 & setgie20 & u10_19=0b0010000000 & u5_9i=0b00010 & subop=0b00011 { setgie(setgie20:1); }
+
         :STANDBY is u20_24=0 & u10_19=0 & u7_9=0 & standby5_6 & subop=0b00000 { standby(standby5_6:1); }
 
         define pcodeop TLB_TargetRead;
@@ -928,6 +1106,7 @@ with : $(I32) {
     }
     with : $(LSMW) {
         # Difference from LMW/SMW is that this requires Ra be word aligned, and fp/sp order are inverted.
+        # XXX gdb reverses order of all 4 special regs instead of just swapping fp/sp - explicitly against the manual.
         :LMWA.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=0 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b01 & Lmwa.regs {
             mult_addr = LsmwRa;
             build Lmwa.regs;
