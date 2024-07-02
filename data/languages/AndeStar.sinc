@@ -1042,21 +1042,19 @@ with : $(I32) {
 
     with : $(ALU_1) {
         # TODO check div by zero and IDIVZE state
-        # NOTE register order in disasm differs from instruction bitfield
         :DIVR u20_24, u5_9, u15_19, u10_14 is u20_24 & u20_24i & u15_19 & u10_14 & u5_9 & u5_9i & subop=0b10111 {
             local a:4 = u15_19;
             local b:4 = u10_14;
-            u20_24 = a / b;
-            # TODO dont emit pcode for this comparison, it could be constant
-            if (!(u5_9i:1 != u20_24i:1)) goto inst_next;
+            # manual states that if Rt==Rs, only output is quotient. so, write quotient last.
             u5_9 = a % b;
+            u20_24 = a / b;
         }
         :DIVSR u20_24, u5_9, u15_19, u10_14 is u20_24 & u20_24i & u15_19 & u10_14 & u5_9 & u5_9i & subop=0b10110 {
             local a:4 = u15_19;
             local b:4 = u10_14;
-            u20_24 = a s/ b;
-            if (!(u5_9i:1 != u20_24i:1)) goto inst_next;
+            # manual states that if Rt==Rs, only output is quotient. so, write quotient last.
             u5_9 = a s% b;
+            u20_24 = a s/ b;
         }
     }
     with : $(ALU_2) {
