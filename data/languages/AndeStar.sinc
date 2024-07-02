@@ -87,7 +87,7 @@ define register offset=0x100 size=4 [
 # 0x202  (4, 0, 2)    PFMC2
 # 0x208  (4, 1, 0)    PFM_CTL
 
-# NOTE other languages use @defines instead of bitrange - why?
+# TODO other languages use @defines instead of bitrange - why?
 define bitrange
     PSW.GIE     =PSW[0,1]
     PSW.INTL    =PSW[1,2]
@@ -400,7 +400,7 @@ macro ifret() {
     return [IFC_LP];
 }
 
-# NOTE if decompiler only sees IFC_ON as single value on all flows to this pcode block, it will warn about unreachable code elimination
+# TODO if decompiler only sees IFC_ON as single value on all flows to this pcode block, it will warn about unreachable code elimination
 # not sure there's much to do about it
 macro set_link_gpr(gpr, target) {
     if (IFC_ON == 1) goto <ifcon>;
@@ -577,7 +577,7 @@ with : $(I32) {
     imm14s_rel: rel is s0_13 [ rel = inst_start + (s0_13 << 1); ] { export *:4 rel; }
     imm16s_rel: rel is s0_15 [ rel = inst_start + (s0_15 << 1); ] { export *:4 rel; }
     imm24s_rel: rel is s0_23 & itMode=0 [ rel = inst_start + (s0_23 << 1); ] { export *:4 rel; }
-    # NOTE gdb takes 8 bits from address, but manual only says 7
+    # TODO gdb takes 8 bits from address, but manual only says 7
     imm24s_rel: rel is s0_23 & itMode=1 [ rel = (inst_start & 0xfe000000) + (s0_23 << 1); ] { export *:4 rel; }
 
     with : $(BR1) {
@@ -1113,7 +1113,7 @@ with : $(I32) {
     }
     with : $(LSMW) {
         # Difference from LMW/SMW is that this requires Ra be word aligned, and fp/sp order are inverted.
-        # XXX gdb reverses order of all 4 special regs instead of just swapping fp/sp - explicitly against the manual.
+        # TODO gdb reverses order of all 4 special regs instead of just swapping fp/sp - explicitly against the manual.
         :LMWA.^LsmwBa_^LsmwId_^LsmwM_ LsmwRb, [LsmwRa], LsmwRe, Enable4 is LsmwRb & LsmwRa & LsmwRe & Enable4 & LsmwLs=0 & LsmwBa_ & LsmwId_ & LsmwM_ & LsmwSub=0b01 & Lmwa.regs {
             mult_addr = LsmwRa;
             build Lmwa.regs;
