@@ -133,6 +133,8 @@ define register offset=0x1000 size=4 [mult_addr bi_addr IFC_ON contextreg];
 define context contextreg
   # set by java when decoding insn within EX9.IT
   itMode=(0,0)
+
+  ifcOn=(1,1)
 ;
 
 # valid if isa=0
@@ -368,35 +370,13 @@ define pcodeop setgie;
 define pcodeop standby;
 define pcodeop ex9it;
 
-# for now, IFC_ON is dedicated register to make pcode more simple.
-# wrong behavior, but only matters for things exposing r/w access to PSW directly.
-macro psw_ifcon_clear() {
-    IFC_ON = 0;
-}
-
-macro branch_if(cond, target) {
-    if (!cond) goto inst_next;
-    psw_ifcon_clear();
-    goto target;
-}
-
-macro call_if(cond, target) {
-    if (!cond) goto inst_next;
-    psw_ifcon_clear();
-    call target;
-}
-
 macro ifcall(target) {
-    if (IFC_ON == 1) goto <ifcon>;
-        IFC_LP = inst_next;
-    <ifcon>
+    IFC_LP = inst_next;
     IFC_ON = 1;
     call target;
 }
 
 macro ifret() {
-    if (IFC_ON == 0) goto inst_next;
-    psw_ifcon_clear();
     return [IFC_LP];
 }
 
@@ -434,6 +414,14 @@ macro set_link_gpr(gpr, target) {
 
 pc_next: is itMode=0 { local pcn:4 = inst_next;       export pcn; }
 pc_next: is itMode=1 { local pcn:4 = inst_start + 2;  export pcn; }
+
+ifcOnClr: is ifcOn=1 [ ifcOn=0; globalset(inst_start, ifcOn); ] { IFC_ON = 0; }
+ifcOnClr: is epsilon {}
+
+set_lp_pc_next: is ifcOn=0 & pc_next { lp = pc_next; }
+set_lp_pc_next: is ifcOn=1 { lp = IFC_LP; }
+set_u20_24_pc_next: is u20_24 & ifcOn=0 & pc_next { u20_24 = pc_next; }
+set_u20_24_pc_next: is u20_24 & ifcOn=1 { u20_24 = IFC_LP; }
 
 with : $(I32) {
     with : $(ALU_1) & u5_9i=0 {
@@ -581,105 +569,109 @@ with : $(I32) {
     imm24s_rel: rel is s0_23 & itMode=1 [ rel = (inst_start & 0xfe000000) + (s0_23 << 1); ] { export *:4 rel; }
 
     with : $(BR1) {
-        :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel {
-            branch_if(u20_24 == u15_19, imm14s_rel);
+        :BEQ u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=0 & imm14s_rel & ifcOnClr {
+            if (!(u20_24 == u15_19)) goto inst_next;
+            build ifcOnClr;
+            goto imm14s_rel;
         }
-        :BNE u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=1 & imm14s_rel {
-            branch_if(u20_24 != u15_19, imm14s_rel);
+        :BNE u20_24, u15_19, imm14s_rel is u20_24 & u15_19 & u14_14=1 & imm14s_rel & ifcOnClr {
+            if (!(u20_24 != u15_19)) goto inst_next;
+            build ifcOnClr;
+            goto imm14s_rel;
         }
     }
     with : $(BR2) {
-        :BEQZ u20_24, imm16s_rel is u20_24 & u16_19=0b0010 & imm16s_rel { branch_if(u20_24 == 0, imm16s_rel); }
-        :BNEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0011 & imm16s_rel { branch_if(u20_24 != 0, imm16s_rel); }
-        :BGEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0100 & imm16s_rel { branch_if(u20_24 s>= 0, imm16s_rel); }
-        :BLTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0101 & imm16s_rel { branch_if(u20_24 s< 0, imm16s_rel); }
-        :BGTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0110 & imm16s_rel { branch_if(u20_24 s> 0, imm16s_rel); }
-        :BLEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0111 & imm16s_rel { branch_if(u20_24 s<= 0, imm16s_rel); }
-        :BGEZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1100 & imm16s_rel & pc_next {
+        :BEQZ u20_24, imm16s_rel is u20_24 & u16_19=0b0010 & imm16s_rel & ifcOnClr { if (!(u20_24  == 0)) goto inst_next; build ifcOnClr; goto imm16s_rel; }
+        :BNEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0011 & imm16s_rel & ifcOnClr { if (!(u20_24  != 0)) goto inst_next; build ifcOnClr; goto imm16s_rel; }
+        :BGEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0100 & imm16s_rel & ifcOnClr { if (!(u20_24 s>= 0)) goto inst_next; build ifcOnClr; goto imm16s_rel; }
+        :BLTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0101 & imm16s_rel & ifcOnClr { if (!(u20_24  s< 0)) goto inst_next; build ifcOnClr; goto imm16s_rel; }
+        :BGTZ u20_24, imm16s_rel is u20_24 & u16_19=0b0110 & imm16s_rel & ifcOnClr { if (!(u20_24  s> 0)) goto inst_next; build ifcOnClr; goto imm16s_rel; }
+        :BLEZ u20_24, imm16s_rel is u20_24 & u16_19=0b0111 & imm16s_rel & ifcOnClr { if (!(u20_24 s<= 0)) goto inst_next; build ifcOnClr; goto imm16s_rel; }
+
+        :BGEZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1100 & imm16s_rel & set_lp_pc_next & ifcOnClr {
             local bcond = u20_24;
-            set_link_gpr(lp, pc_next);
-            call_if(bcond s>= 0, imm16s_rel);
+            build set_lp_pc_next;
+            if (!(bcond s>= 0)) goto inst_next;
+            build ifcOnClr;
+            call imm16s_rel;
         }
-        :BLTZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1101 & imm16s_rel & pc_next {
+        :BLTZAL u20_24, imm16s_rel is u20_24 & u16_19=0b1101 & imm16s_rel & set_lp_pc_next & ifcOnClr {
             local bcond = u20_24;
-            set_link_gpr(lp, pc_next);
-            call_if(bcond s< 0, imm16s_rel);
+            build set_lp_pc_next;
+            if (!(bcond s< 0)) goto inst_next;
+            call imm16s_rel;
         }
     }
     with : $(JI) {
-        :J   imm24s_rel is u24_24=0 & imm24s_rel { psw_ifcon_clear(); goto imm24s_rel; }
-        :JAL imm24s_rel is u24_24=1 & imm24s_rel & pc_next {
-            set_link_gpr(lp, pc_next);
-            psw_ifcon_clear();
+        :J   imm24s_rel is u24_24=0 & imm24s_rel & ifcOnClr { goto imm24s_rel; }
+        :JAL imm24s_rel is u24_24=1 & imm24s_rel & set_lp_pc_next & ifcOnClr {
+            build set_lp_pc_next;
+            build ifcOnClr;
             # TODO this should be branch (or: call with retaddr=IFC_LP hint), if flow has IFC_ON==1
             call imm24s_rel;
         }
     }
     with : $(JREG) {
-        :JR  u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=0 & subop=0b00000 {
-            psw_ifcon_clear();
+        :JR  u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=0 & subop=0b00000 & ifcOnClr {
             goto [u10_14];
         }
-        :RET u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=1 & subop=0b00000 {
-            psw_ifcon_clear();
+        :RET u10_14 is u15_24=0 & u10_14 & u8_9=0 & u6_7=0 & u5_5=1 & subop=0b00000 & ifcOnClr {
             return [u10_14];
         }
-        :JR."[T|IT]OFF" u10_14 is u15_24=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 {
+        :JR."[T|IT]OFF" u10_14 is u15_24=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & ifcOnClr {
             #PSW.IT = 0;
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 0;
             #<do_branch>
-            psw_ifcon_clear();
             goto [u10_14];
         }
-        :JRAL u20_24, u10_14 is u20_24    & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & pc_next {
+        :JRAL u20_24, u10_14 is u20_24    & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & set_u20_24_pc_next & ifcOnClr {
             local jaddr:4 = u10_14;
-            set_link_gpr(u20_24, pc_next);
-            psw_ifcon_clear();
+            build set_u20_24_pc_next;
+            build ifcOnClr;
             goto [jaddr];
         }
         # special case for call (Rt=LP)
-        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & pc_next {
+        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u8_9=0 & u5_7=0 & subop=0b00001 & set_lp_pc_next & ifcOnClr {
             local jaddr:4 = u10_14;
-            set_link_gpr(lp, pc_next);
-            psw_ifcon_clear();
+            build set_lp_pc_next;
+            build ifcOnClr;
             call [jaddr];
         }
         # special case for return (from leaf function: Rt=LP, Rb=LP)
-        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u10_14i=30 & u8_9=0 & u5_7=0 & subop=0b00001 & pc_next {
+        :JRAL u10_14         is u20_24i=30 & u15_19=0 & u10_14 & u10_14i=30 & u8_9=0 & u5_7=0 & subop=0b00001 & set_lp_pc_next & ifcOnClr {
             local jaddr:4 = u10_14;
-            set_link_gpr(lp, pc_next);
-            psw_ifcon_clear();
+            build set_lp_pc_next;
+            build ifcOnClr;
             # TODO ensure correct in IFC case (gdb has probably incorrect behavior of Rt=IFC_LP *after* Rb is read for jaddr, which we replicate)
             return [jaddr];
         }
-        :JRAL."[T|IT]ON" u20_24, u10_14 is u20_24     & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & pc_next {
+        :JRAL."[T|IT]ON" u20_24, u10_14 is u20_24     & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & set_u20_24_pc_next & ifcOnClr {
             #PSW.IT = 1;
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 1;
             #<do_branch>
             local jaddr:4 = u10_14;
-            set_link_gpr(u20_24, pc_next);
-            psw_ifcon_clear();
+            build set_u20_24_pc_next;
+            build ifcOnClr;
             goto [jaddr];
         }
         # special case for call
-        :JRAL."[T|IT]ON" u10_14         is u20_24i=30 & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & pc_next {
+        :JRAL."[T|IT]ON" u10_14         is u20_24i=30 & u15_19=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=0 & subop=0b00000 & set_lp_pc_next & ifcOnClr {
             #PSW.IT = 1;
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 1;
             #<do_branch>
             local jaddr:4 = u10_14;
-            set_link_gpr(lp, pc_next);
-            psw_ifcon_clear();
+            build set_lp_pc_next;
+            build ifcOnClr;
             call [jaddr];
         }
-        :RET."[T|IT]OFF" u10_14 is u15_24=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=1 & subop=0b00000 {
+        :RET."[T|IT]OFF" u10_14 is u15_24=0 & u10_14 & (u8_9=0b01 | u8_9=0b11) & u6_7=0 & u5_5=1 & subop=0b00000 & ifcOnClr {
             #PSW.IT = 0;
             #if (!(u8_9 == 0b11)) goto <do_branch>;
             #    PSW.DT = 0;
             #<do_branch>
-            psw_ifcon_clear();
             return [u10_14];
         }
     }
@@ -1179,35 +1171,35 @@ with : $(I32) {
     }
     with : $(BR3) {
         imm8s_rel: rel is s0_7 [ rel = inst_start + (s0_7 << 1); ] { export *:4 rel; }
-        :BEQC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=0 { branch_if(u20_24 == s8_18, imm8s_rel); }
-        :BNEC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=1 { branch_if(u20_24 != s8_18, imm8s_rel); }
+        :BEQC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=0 & ifcOnClr { if (!(u20_24 == s8_18)) goto inst_next; build ifcOnClr; goto imm8s_rel; }
+        :BNEC u20_24, s8_18, imm8s_rel is u20_24 & s8_18 & imm8s_rel & u19_19=1 & ifcOnClr { if (!(u20_24 != s8_18)) goto inst_next; build ifcOnClr; goto imm8s_rel; }
     }
     with : $(BITCI) {
         :BITCI u20_24, u15_19, u0_14 is u20_24 & u15_19 & u0_14 { u20_24 = u15_19 & ~u0_14; }
     }
     with : $(JREG) & u5_9=0 {
-        :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 & pc_next {
+        :JRALNEZ    u20_24, u10_14  is u20_24    & u10_14 & subop=0b00011 & set_u20_24_pc_next & ifcOnClr {
             local jaddr:4 = u10_14;
 
-            set_link_gpr(u20_24, pc_next);
-            psw_ifcon_clear();
+            build set_u20_24_pc_next;
+            build ifcOnClr;
 
             if (!(jaddr != 0)) goto inst_next;
             goto [jaddr];
         }
         # special case for Rt=LP
-        :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 & pc_next {
+        :JRALNEZ    u10_14          is u20_24=30 & u10_14 & subop=0b00011 & set_lp_pc_next & ifcOnClr {
             local jaddr:4 = u10_14;
 
-            set_link_gpr(lp, pc_next);
-            psw_ifcon_clear();
+            build set_lp_pc_next;
+            build ifcOnClr;
 
             if (!(jaddr != 0)) goto inst_next;
             call [jaddr];
         }
-        :JRNEZ      u10_14          is u20_24=0  & u10_14 & subop=0b00010 {
+        :JRNEZ      u10_14          is u20_24=0  & u10_14 & subop=0b00010 & ifcOnClr {
             if (!(u10_14 != 0)) goto inst_next;
-            psw_ifcon_clear();
+            build ifcOnClr;
             goto [u10_14];
         }
     }
@@ -1216,9 +1208,8 @@ with : $(I32) {
 
     # SOP0
     with : $(BR2) & u16_19=0b0000 {
-        :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel {
-            ifcall(imm16s_rel);
-        }
+        :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel & ifcOn=0 [ ifcOn=1; globalset(inst_start, ifcOn); ] { ifcall(imm16s_rel); }
+        :IFCALL imm16s_rel is u20_24=0b00000 & imm16s_rel & ifcOn=1 { goto imm16s_rel; }
 
         # ZOL (Zero Overhead Loop) Optional
         :MTLBI imm16s_rel is u20_24=0b00001 & imm16s_rel { LB = inst_start + imm16s_rel; }
@@ -1226,9 +1217,8 @@ with : $(I32) {
     }
     with : $(JREG) {
         # haven't seen this used, but it's in binutils
-        :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 {
-            ifret();
-        }
+        :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 & ifcOnClr & ifcOn=0 {}
+        :IFRET is u20_24=0 & u15_19=0 & u5_14=0b11 & subop=0b00000 & ifcOnClr & ifcOn=1 { ifret(); }
     }
 }
 
@@ -1273,20 +1263,20 @@ with : $(I16) {
     :SWI450 R4_5_8, addr4 is op9_14=0b011011 & R4_5_8 & addr4 { *:4 addr4 = R4_5_8:4; }
 
     imm8s_rel: rel is imm8s [ rel = inst_start + (imm8s << 1); ] { export *:4 rel; }
-    :BEQZ38 R3_8_10, imm8s_rel is op11_14=0b1000 & R3_8_10 & imm8s_rel { branch_if(R3_8_10 == 0, imm8s_rel); }
-    :BNEZ38 R3_8_10, imm8s_rel is op11_14=0b1001 & R3_8_10 & imm8s_rel { branch_if(R3_8_10 != 0, imm8s_rel); }
-    # if R3_8_10 == R5(a5), it's J8
-    :BEQS38 R3_8_10, imm8s_rel is op11_14=0b1010 & R3_8_10 & imm8s_rel { branch_if(R3_8_10 == a5, imm8s_rel); }
-    :BNES38 R3_8_10, imm8s_rel is op11_14=0b1011 & R3_8_10 & imm8s_rel { branch_if(R3_8_10 != a5, imm8s_rel); }
-    :BEQZS8 imm8s_rel is op8_14=0b1101000 & imm8s_rel { branch_if(ta == 0, imm8s_rel); }
-    :BNEZS8 imm8s_rel is op8_14=0b1101001 & imm8s_rel { branch_if(ta != 0, imm8s_rel); }
+    :BEQZ38 R3_8_10, imm8s_rel is op11_14=0b1000 & R3_8_10 & imm8s_rel & ifcOnClr { if (!(R3_8_10 ==  0)) goto inst_next; build ifcOnClr; goto imm8s_rel; }
+    :BNEZ38 R3_8_10, imm8s_rel is op11_14=0b1001 & R3_8_10 & imm8s_rel & ifcOnClr { if (!(R3_8_10 !=  0)) goto inst_next; build ifcOnClr; goto imm8s_rel; }
+    :BEQS38 R3_8_10, imm8s_rel is op11_14=0b1010 & R3_8_10 & imm8s_rel & ifcOnClr { if (!(R3_8_10 == a5)) goto inst_next; build ifcOnClr; goto imm8s_rel; }
+    :BNES38 R3_8_10, imm8s_rel is op11_14=0b1011 & R3_8_10 & imm8s_rel & ifcOnClr { if (!(R3_8_10 != a5)) goto inst_next; build ifcOnClr; goto imm8s_rel; }
+    :BEQZS8 imm8s_rel is op8_14=0b1101000 & imm8s_rel & ifcOnClr { if (!(ta == 0)) goto inst_next; build ifcOnClr; goto imm8s_rel; }
+    :BNEZS8 imm8s_rel is op8_14=0b1101001 & imm8s_rel & ifcOnClr { if (!(ta != 0)) goto inst_next; build ifcOnClr; goto imm8s_rel; }
 
     # V3 ISA modifies BREAK16 such that imm4u is zero. nonzero imm4u encodes EX9.IT instead.
     :BREAK16 imm5u is op9_14=0b110101 & imm4u=0 & imm5u { Exception_Breakpoint(imm5u:1); }
 
-    :J8 imm8s_rel is op8_14=0b1010101 & imm8s_rel { psw_ifcon_clear(); goto imm8s_rel; }
-    :JR5   R5_0_4 is op5_14=0b1011101000 & R5_0_4 { psw_ifcon_clear(); goto [R5_0_4]; }
-    :JRAL5 R5_0_4 is op5_14=0b1011101001 & R5_0_4 { set_link_gpr(lp, inst_next); psw_ifcon_clear(); call [R5_0_4]; }
+    # special case of BEQS38
+    :J8 imm8s_rel is op8_14=0b1010101 & imm8s_rel & ifcOnClr { goto imm8s_rel; }
+    :JR5   R5_0_4 is op5_14=0b1011101000 & R5_0_4 & ifcOnClr { goto [R5_0_4]; }
+    :JRAL5 R5_0_4 is op5_14=0b1011101001 & R5_0_4 & set_lp_pc_next & ifcOnClr { build set_lp_pc_next; build ifcOnClr; call [R5_0_4]; }
 
     :RET5 R5_0_4 is op5_14=0b1011101100 & R5_0_4 { return [R5_0_4]; }
 
@@ -1396,13 +1386,12 @@ with : $(I16) {
     pop25_re: R2_5_6 is R2_5_6 & R2_5_6=1 { pop25_prologue_2(); }
     pop25_re: R2_5_6 is R2_5_6 & R2_5_6=2 { pop25_prologue_4(); }
     pop25_re: R2_5_6 is R2_5_6 & R2_5_6=3 { pop25_prologue_8(); }
-    :POP25  pop25_re, imm8u_5    is op7_14=0b11111001 & pop25_re & imm8u_5 {
+    :POP25  pop25_re, imm8u_5    is op7_14=0b11111001 & pop25_re & imm8u_5 & ifcOnClr {
         sp = sp + imm8u_5;
         build pop25_re;
         pop_reg(fp);
         pop_reg(gp);
         pop_reg(lp);
-        psw_ifcon_clear();
         return [lp];
     }
 
@@ -1417,11 +1406,9 @@ with : $(I16) {
 ########## DSP ISA Extension
 
     imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
-    :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
-        ifcall(imm9s_rel);
-    }
+    :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel & ifcOn=0 [ ifcOn=1; globalset(inst_start, ifcOn); ] { ifcall(imm9s_rel); }
+    :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel & ifcOn=1 { goto imm9s_rel; }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
-    :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
-        ifret();
-    }
+    :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 & ifcOnClr & ifcOn=0 {}
+    :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 & ifcOnClr & ifcOn=1 { ifret(); }
 }
