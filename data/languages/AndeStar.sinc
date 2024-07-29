@@ -282,7 +282,6 @@ define token instr16(16) endian=big
     imm4u = (5,8)
 
     imm9u = (0,8)
-    imm9s = (0,8) signed
     imm10s = (0,9) signed
     imm8s = (0,7) signed
     imm7u = (0,6)
@@ -1418,9 +1417,9 @@ with : $(I16) {
 
 ########## DSP ISA Extension
 
-    imm9s_rel: rel is imm9s [ rel = inst_start + (imm9s << 1); ] { export *:4 rel; }
-    :IFCALL9 imm9s_rel is op10_14=0b11110 & imm9s_rel {
-        ifcall(imm9s_rel);
+    imm9u_rel: rel is imm9u [ rel = inst_start + (imm9u << 1); ] { export *:4 rel; }
+    :IFCALL9 imm9u_rel is op10_14=0b11110 & imm9u_rel {
+        ifcall(imm9u_rel);
     }
     # Special case of MOV55 encoding (Rt=sp, Ra=sp)
     :IFRET16 is op10_14=0b00000 & R5_5_9=0b11111 & R5_0_4=0b11111 {
