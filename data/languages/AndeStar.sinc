@@ -1286,6 +1286,8 @@ with : $(I16) {
 
     :J8 imm8s_rel is op8_14=0b1010101 & imm8s_rel { psw_ifcon_clear(); goto imm8s_rel; }
     :JR5   R5_0_4 is op5_14=0b1011101000 & R5_0_4 { psw_ifcon_clear(); goto [R5_0_4]; }
+    # special case for leaf return
+    :JRAL5 R5_0_4 is op5_14=0b1011101001 & R5_0_4 & R5_0_4=30 { set_link_gpr(lp, inst_next); psw_ifcon_clear(); return [R5_0_4]; }
     :JRAL5 R5_0_4 is op5_14=0b1011101001 & R5_0_4 { set_link_gpr(lp, inst_next); psw_ifcon_clear(); call [R5_0_4]; }
 
     :RET5 R5_0_4 is op5_14=0b1011101100 & R5_0_4 { return [R5_0_4]; }
@@ -1409,8 +1411,8 @@ with : $(I16) {
 ########## EX9IT Extension
 
     # indirect instruction execution from Instruction_Table
-    :EX9.IT imm9u is itMode=0 & op9_14=0b110101      & imm9u { ex9it(imm9u:2); }
-    :EX9.IT imm9u is itMode=1 & op9_14=0b110101      & imm9u { Exception_Reserved_Instruction(); }
+    :EX9.IT imm9u is itMode=0 & op9_14=0b110101      & imm9u & imm4u!=0 { ex9it(imm9u:2); }
+    :EX9.IT imm9u is itMode=1 & op9_14=0b110101      & imm9u & imm4u!=0 { Exception_Reserved_Instruction(); }
     :EX9.IT imm5u is itMode=0 & op5_14=0b1011101010  & imm5u { ex9it(imm5u:1); }
     :EX9.IT imm5u is itMode=1 & op5_14=0b1011101010  & imm5u { Exception_Reserved_Instruction(); }
 
