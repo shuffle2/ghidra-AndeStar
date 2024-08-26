@@ -275,6 +275,7 @@ define token instr16(16) endian=big
     R3_8_10 = (8,10)
     R3_6_8 = (6,8)
     R3_3_5 = (3,5)
+    imm3u_3 = (3,5)
     R3_0_2 = (0,2)
 
     R2_5_6 = (5,6)
@@ -1339,8 +1340,8 @@ with : $(I16) {
         :XOR33  R3_6_8, R3_3_5 is R3_6_8 & R3_3_5 & subop0_2=0b101 { R3_6_8 = R3_6_8 ^ R3_3_5; }
     }
     with : $(BFMI333) {
-        :BMSKI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b110 { R3_6_8 = R3_6_8 & (1 << imm3u); }
-        :FEXTI33 R3_6_8, imm3u is R3_6_8 & imm3u & subop0_2=0b111 { R3_6_8 = R3_6_8 & ((1 << (imm3u + 1)) - 1); }
+        :BMSKI33 R3_6_8, imm3u_3 is R3_6_8 & imm3u_3 & subop0_2=0b110 { R3_6_8 = R3_6_8 & (1 << imm3u_3); }
+        :FEXTI33 R3_6_8, imm3u_3 is R3_6_8 & imm3u_3 & subop0_2=0b111 { R3_6_8 = R3_6_8 & ((1 << (imm3u_3 + 1)) - 1); }
     }
     # imm7n shall be in range [-128,-4]
     imm7n: imm is imm5u [imm = (imm5u - 32) << 2;] { export *[const]:4 imm; }
