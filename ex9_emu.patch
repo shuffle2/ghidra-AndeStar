@@ -1,0 +1,77 @@
+diff --git a/Ghidra/Features/Base/src/main/java/ghidra/program/util/SymbolicPropogator.java b/Ghidra/Features/Base/src/main/java/ghidra/program/util/SymbolicPropogator.java
+index 357f62d1c8..2f3a7455f2 100644
+--- a/Ghidra/Features/Base/src/main/java/ghidra/program/util/SymbolicPropogator.java
++++ b/Ghidra/Features/Base/src/main/java/ghidra/program/util/SymbolicPropogator.java
+@@ -935,9 +935,9 @@ public class SymbolicPropogator {
+ 
+ 						val3 = vContext.getValue(in[2], null);
+ 
+-						if (val3 != null && !injected) {
++						//if (val3 != null && !injected) {
+ 							addStoredReferences(vContext, instruction, out, val3, monitor);
+-						}
++						//}
+ 						vContext.putValue(out, val3, mustClearAll);
+ 						break;
+ 
+diff --git a/Ghidra/Framework/Emulation/src/main/java/ghidra/pcode/emu/DefaultPcodeThread.java b/Ghidra/Framework/Emulation/src/main/java/ghidra/pcode/emu/DefaultPcodeThread.java
+index 76886f2953..35fc1cb5db 100644
+--- a/Ghidra/Framework/Emulation/src/main/java/ghidra/pcode/emu/DefaultPcodeThread.java
++++ b/Ghidra/Framework/Emulation/src/main/java/ghidra/pcode/emu/DefaultPcodeThread.java
+@@ -142,6 +142,41 @@ public class DefaultPcodeThread<T> implements PcodeThread<T> {
+ 		public void emu_injection_err() {
+ 			throw new InjectionErrorPcodeExecutionException(null, null);
+ 		}
++
++                @PcodeUserop
++                public void ex9it(T imm9u) {
++                    PcodeFrame saved = thread.frame;
++
++                    // Get current ITB value
++                    long itb = thread.arithmetic.toLong(
++                      thread.state.getVar(thread.language.getRegister("ITB"), Reason.EXECUTE_DECODE),
++                      Purpose.DECODE);
++
++                    // Compute address to fetch from
++                    long memOffset = (itb & ~0b11) + thread.arithmetic.toLong(imm9u, Purpose.DECODE) * 4;
++                    Address fetchAddr = thread.instruction.getAddress().getNewAddress(memOffset);
++
++                    // itMode=1 for sleigh context
++                    RegisterValue itModeContext = thread.context.assign(
++                      thread.language.getRegister("itMode"), BigInteger.ONE);
++
++                    Instruction fetchInstr = thread.decoder.decodeInstruction(fetchAddr, itModeContext);
++                    try {
++                      // reconstruct fetchInstr as if it exists at EX9.IT address, so pc-relative references work as expected.
++                      // pc-relative branch instructions in Instruction_Table always branch to same target, no matter where
++                      // EX9.IT is (taken care of in sleigh by detecting itMode=1).
++                      Instruction reloced = new PseudoInstruction(thread.counter, fetchInstr.getPrototype(), fetchInstr, fetchInstr);
++
++                      PcodeFrame frame = thread.executor.execute(PcodeProgram.fromInstruction(reloced), thread.getUseropLibrary());
++                      // pre-compensate for the emulator advancing pc (in advanceAfterFinished())
++                      // fallthrough: 2 (sizeof(EX9.IT)), external branch: sizeof(fetchInstr)
++                      thread.overrideCounter(thread.counter.subtractWrap(
++                        frame.isFallThrough() ? thread.instruction.getLength() : fetchInstr.getLength()));
++                    } catch (Exception ex) {
++                      throw new PcodeExecutionException("ex9it error " + ex.getMessage());
++                    }
++                    thread.frame = saved;
++                }
+ 	}
+ 
+ 	/**
+@@ -602,6 +637,14 @@ public class DefaultPcodeThread<T> implements PcodeThread<T> {
+ 	 * framework. There is likely utility here when porting those to this framework.
+ 	 */
+ 	protected void preExecuteInstruction() {
++		Msg.warn(this, "preExecuteInstruction " + contextreg.toString());
++		if (contextreg != Register.NO_CONTEXT) {
++			RegisterValue ctx = new RegisterValue(contextreg, BigInteger.ZERO)
++					.combineValues(defaultContext.getDefaultValue(contextreg, counter))
++					.combineValues(defaultContext.getFlowValue(context))
++					.combineValues(getContextAfterCommits());
++			overrideContext(ctx);
++		}
+ 	}
+ 
+ 	/**
